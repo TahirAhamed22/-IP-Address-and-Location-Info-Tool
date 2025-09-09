@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - VaultGuard Secure</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body data-theme="dark">
+    <header class="header">
+        <div class="header-content">
+            <a href="{{ url_for('home') }}" class="logo">
+                <div class="logo-icon">🛡️</div>
+                <span>VaultGuard <span class="secure-badge">SECURE</span></span>
+            </a>
+            <div class="header-actions">
+                <a href="{{ url_for('home') }}" class="auth-btn">Back to Home</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h1 style="text-align: center; color: var(--accent-blue); margin-bottom: 2rem;">VaultGuard Privacy Policy</h1>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 3rem;">
+                <strong>Effective Date:</strong> September 1, 2025 | <strong>Last Updated:</strong> September 1, 2025
+            </p>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">1. INFORMATION WE COLLECT</h2>
+                
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Account Information:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Username (chosen by you)</li>
+                    <li>Password hash (bcrypt encrypted)</li>
+                    <li>Encryption salt (for your password encryption)</li>
+                </ul>
+
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Vault Data:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Site names and usernames (encrypted)</li>
+                    <li>Passwords (AES-256 encrypted)</li>
+                    <li>Timestamps for security auditing</li>
+                </ul>
+
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Security Logs:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Login attempts and times</li>
+                    <li>IP addresses for security monitoring</li>
+                    <li>Failed authentication attempts</li>
+                </ul>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">2. HOW WE USE INFORMATION</h2>
+                <ul style="margin-left: 1.5rem;">
+                    <li><strong>Password Storage:</strong> Your passwords are encrypted before storage</li>
+                    <li><strong>Security Monitoring:</strong> Detecting and preventing unauthorized access</li>
+                    <li><strong>Service Improvement:</strong> Anonymous usage statistics</li>
+                    <li><strong>Legal Compliance:</strong> Required security auditing</li>
+                </ul>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">3. ZERO-KNOWLEDGE ARCHITECTURE</h2>
+                <div style="background: rgba(46, 213, 115, 0.1); border: 1px solid rgba(46, 213, 115, 0.3); padding: 1.5rem; border-radius: 12px;">
+                    <ul style="margin-left: 1.5rem;">
+                        <li>We cannot decrypt your stored passwords</li>
+                        <li>Your master password is never stored</li>
+                        <li>Encryption happens client-side before transmission</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">4. DATA SHARING</h2>
+                <div style="background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.3); padding: 1.5rem; border-radius: 12px;">
+                    <h3 style="color: var(--accent-red);">We DO NOT:</h3>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Sell your personal information</li>
+                        <li>Share passwords with third parties</li>
+                        <li>Provide data to advertisers</li>
+                        <li>Use your passwords for any purpose</li>
+                    </ul>
+                </div>
+
+                <div style="background: rgba(255, 167, 2, 0.1); border: 1px solid rgba(255, 167, 2, 0.3); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                    <h3 style="color: var(--accent-yellow);">We MAY share information only:</h3>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>When required by law</li>
+                        <li>To protect our rights or safety</li>
+                        <li>With your explicit consent</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">5. DATA SECURITY</h2>
+                
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Technical Safeguards:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>AES-256 encryption for password storage</li>
+                    <li>HTTPS for data transmission</li>
+                    <li>PBKDF2 key derivation (600,000 iterations)</li>
+                    <li>Security event logging</li>
+                    <li>Account lockout protection</li>
+                </ul>
+
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Administrative Safeguards:</h3>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Limited access to systems</li>
+                    <li>Security incident procedures</li>
+                    <li>Regular security reviews</li>
+                </ul>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">6. YOUR RIGHTS</h2>
+                <p>You have the right to:</p>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Access your account information</li>
+                    <li>Delete your account and data</li>
+                    <li>Export your data (encrypted format)</li>
+                    <li>Request security incident information</li>
+                </ul>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">7. DATA RETENTION</h2>
+                <ul style="margin-left: 1.5rem;">
+                    <li><strong>Active accounts:</strong> Data retained indefinitely</li>
+                    <li><strong>Deleted accounts:</strong> Data purged within 30 days</li>
+                    <li><strong>Security logs:</strong> Retained for 1 year</li>
+                </ul>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">8. INTERNATIONAL USERS</h2>
+                <p>If you access VaultGuard from outside your jurisdiction, you are responsible for compliance with local laws.</p>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">9. CHILDREN'S PRIVACY</h2>
+                <div style="background: rgba(255, 167, 2, 0.1); border: 1px solid rgba(255, 167, 2, 0.3); padding: 1.5rem; border-radius: 12px;">
+                    <p>VaultGuard is not intended for users under 13 years of age. We do not knowingly collect information from children under 13.</p>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">10. CONTACT INFORMATION</h2>
+                <p>For privacy concerns or questions:</p>
+                <ul style="margin-left: 1.5rem;">
+                    <li>Review our security documentation</li>
+                    <li>Contact through official channels only</li>
+                    <li>Report security issues immediately</li>
+                </ul>
+            </section>
+
+            <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+                <p style="color: var(--text-secondary);">
+                    For privacy questions, please contact: 
+                    <a href="mailto:privacy@vaultguard.local" style="color: var(--accent-blue);">privacy@vaultguard.local</a>
+                </p>
+                <p style="color: var(--text-secondary); margin-top: 1rem;">
+                    Security contact: 
+                    <a href="mailto:security@vaultguard.local" style="color: var(--accent-red);">security@vaultguard.local</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

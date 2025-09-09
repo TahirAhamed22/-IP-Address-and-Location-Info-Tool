@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultGuard Secure - Professional Password Management</title>
+    <meta name="description" content="VaultGuard Secure - Professional-grade password security with HTTPS, AES-256 encryption, breach detection, and military-grade analysis.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    
+    <!-- Security Meta Tags -->
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+</head>
+<body data-theme="dark" class="{{ 'logged-in' if logged_in else '' }}">
+    <!-- Security Level Indicator -->
+    <div class="security-indicator">
+        <span class="security-badge" id="securityBadge">
+            🔒 HTTPS Secured
+        </span>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="{{ url_for('home') }}" class="logo">
+                <div class="logo-icon">🛡️</div>
+                <span>VaultGuard <span class="secure-badge">SECURE</span></span>
+            </a>
+            <div class="header-actions">
+                <button class="theme-toggle" id="themeToggle">🌙</button>
+                {% if logged_in %}
+                    <span class="welcome-text">👤 {{ current_user.username }}</span>
+                    <a href="{{ url_for('logout') }}" class="auth-btn">Secure Logout</a>
+                {% else %}
+                    <a href="#" class="auth-btn" id="loginBtn">Secure Access</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- HTTPS Status Alert -->
+        <div id="httpsStatus" style="display: none;"></div>
+
+        <!-- Security Status -->
+        <div class="security-status-card">
+            <div class="security-header">
+                <h2>🛡️ Security Status</h2>
+                <div class="security-indicators">
+                    <div class="security-item active" id="httpsIndicator">
+                        <span class="indicator-icon">🔐</span>
+                        <span>HTTPS Encryption</span>
+                    </div>
+                    <div class="security-item active">
+                        <span class="indicator-icon">🛡️</span>
+                        <span>AES-256 Vault</span>
+                    </div>
+                    <div class="security-item active">
+                        <span class="indicator-icon">⚡</span>
+                        <span>Real-time Monitoring</span>
+                    </div>
+                    <div class="security-item active">
+                        <span class="indicator-icon">🔍</span>
+                        <span>Breach Detection</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hero Section -->
+        <div class="hero-section">
+            <h1 class="hero-title">VaultGuard Secure</h1>
+            <p class="hero-subtitle">Professional-Grade Password Security & Management</p>
+            <div class="trust-indicators">
+                <div class="trust-badge">🔒 HTTPS Protected</div>
+                <div class="trust-badge">🛡️ Military Encryption</div>
+                <div class="trust-badge">⚡ Real-time Security</div>
+                <div class="trust-badge">🔍 Breach Monitoring</div>
+            </div>
+        </div>
+
+        <!-- Password Strength Analyzer -->
+        <div class="card password-analyzer">
+            <h2 class="card-title">🛡️ Military-Grade Password Analyzer</h2>
+            <div class="security-notice">
+                <span class="security-icon">🔑</span>
+                <span>All analysis performed securely with HTTPS encryption</span>
+            </div>
+            
+            <div class="password-input-group">
+                <input type="password" class="password-input" id="passwordInput" placeholder="Enter password for secure analysis" autocomplete="off">
+                <div class="input-actions">
+                    <button class="input-btn" id="toggleVisibility" title="Toggle visibility">👁️</button>
+                    <button class="input-btn" id="copyPassword" title="Secure copy">📋</button>
+                    <button class="input-btn" id="clearPassword" title="Clear securely">🗑️</button>
+                    <button class="input-btn" id="generatePassword" title="Generate secure">⚙️</button>
+                    <button class="input-btn" id="pauseBtn" title="Pause analysis">⏸️</button>
+                </div>
+            </div>
+
+            <!-- Force display strength section -->
+            <div class="strength-section" id="strengthSection">
+                <div class="strength-label">
+                    <span>Security Rating</span>
+                    <span id="strengthText" class="strength-text">-</span>
+                </div>
+                <div class="strength-bar">
+                    <div class="strength-fill" id="strengthFill"></div>
+                </div>
+            </div>
+
+            <div class="analysis-grid" id="analysisResults">
+                <div class="analysis-item">
+                    <div class="analysis-icon">⏱️</div>
+                    <div class="analysis-label">Time to crack</div>
+                    <div class="analysis-value" id="crackTime">-</div>
+                </div>
+                <div class="analysis-item">
+                    <div class="analysis-icon">🔍</div>
+                    <div class="analysis-label">Breach status</div>
+                    <div class="analysis-value" id="breachStatus">-</div>
+                </div>
+            </div>
+
+            <div id="policySection">
+                <h3 style="margin-bottom: 1rem; color: var(--text-secondary);">Enterprise Security Policy</h3>
+                <ul class="policy-list">
+                    <li class="policy-item">
+                        <div class="policy-icon invalid" id="lengthIcon">✗</div>
+                        <span>Minimum length (12+ chars)</span>
+                    </li>
+                    <li class="policy-item">
+                        <div class="policy-icon invalid" id="lowerIcon">✗</div>
+                        <span>Contains lowercase</span>
+                    </li>
+                    <li class="policy-item">
+                        <div class="policy-icon invalid" id="upperIcon">✗</div>
+                        <span>Contains uppercase</span>
+                    </li>
+                    <li class="policy-item">
+                        <div class="policy-icon invalid" id="digitIcon">✗</div>
+                        <span>Contains numbers</span>
+                    </li>
+                    <li class="policy-item">
+                        <div class="policy-icon invalid" id="symbolIcon">✗</div>
+                        <span>Contains symbols</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Password recommendations section -->
+            <div id="passwordRecommendations" style="display: none;">
+                <!-- Recommendations will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Password Generator -->
+        <div class="card password-generator">
+            <h2 class="card-title">⚙️ Cryptographic Password Generator</h2>
+            <div class="security-notice">
+                <span class="security-icon">🔐</span>
+                <span>Uses crypto.getRandomValues() for cryptographic security</span>
+            </div>
+            
+            <div class="generator-controls">
+                <div class="control-group">
+                    <label class="control-label">Length: <span id="lengthValue">16</span></label>
+                    <input type="range" class="slider" id="lengthSlider" min="12" max="64" value="16">
+                </div>
+                <div class="checkbox-grid">
+                    <div class="control-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox" id="includeUpper" checked>
+                            <label class="control-label">Uppercase (A-Z)</label>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox" id="includeLower" checked>
+                            <label class="control-label">Lowercase (a-z)</label>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox" id="includeNumbers" checked>
+                            <label class="control-label">Numbers (0-9)</label>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox" id="includeSymbols" checked>
+                            <label class="control-label">Symbols (!@#$%)</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="generated-output">
+                <input type="text" class="password-input" id="generatedPassword" placeholder="Cryptographically secure password will appear here" readonly>
+                <div class="input-actions">
+                    <button class="input-btn" id="copyGenerated" title="Secure copy">📋</button>
+                    <button class="input-btn" id="useGenerated" title="Test security">🔍</button>
+                </div>
+            </div>
+
+            <button class="generate-btn" id="generateBtn">🎲 Generate Secure Password</button>
+        </div>
+
+        <!-- Secure Password Vault -->
+        {% if logged_in %}
+        <div class="card password-vault">
+            <h2 class="card-title">🔐 AES-256 Encrypted Vault</h2>
+            <div class="vault-header">
+                <p class="vault-subtitle">Professional encryption • HTTPS protected • Zero-knowledge architecture</p>
+                <div class="encryption-indicators">
+                    <span class="encryption-badge">🔐 AES-256</span>
+                    <span class="encryption-badge">🛡️ PBKDF2</span>
+                    <span class="encryption-badge">🔒 HTTPS</span>
+                    <span class="encryption-badge">⚡ Real-time</span>
+                </div>
+            </div>
+            
+            <div class="vault-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Site / Service</label>
+                        <input type="text" class="form-input" id="site-name" placeholder="e.g., Gmail, Banking, UPI" maxlength="120">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Username / Email</label>
+                        <input type="text" class="form-input" id="vault-username" placeholder="Your username or email" maxlength="120">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" id="vault-password" placeholder="Enter password to encrypt">
+                    <div class="security-hint">🔑 All passwords encrypted with military-grade AES-256 before storage</div>
+                </div>
+                <button class="save-btn" id="save-password-btn">💾 Encrypt & Store Securely</button>
+            </div>
+<!-- Enhanced Vault Search and Sort Controls -->
+<div class="vault-controls-enhanced">
+    <div class="search-container">
+        <div class="search-input-wrapper">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input 
+                type="text" 
+                id="vault-search" 
+                placeholder="Search your encrypted passwords..." 
+                class="enhanced-search-input"
+                autocomplete="off"
+                spellcheck="false"
+            >
+            <button class="clear-search-btn" id="clearSearch" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <div class="sort-container">
+        <label for="vault-sort" class="sort-label">Sort by:</label>
+        <div class="sort-select-wrapper">
+            <select id="vault-sort" class="enhanced-sort-select">
+                <option value="updated_at">Recently Updated</option>
+                <option value="created_at">Recently Added</option>
+                <option value="site">Site Name (A-Z)</option>
+                <option value="username">Username (A-Z)</option>
+                <option value="access_count">Most Accessed</option>
+                <option value="alphabetical">Alphabetical</option>
+            </select>
+            <svg class="sort-dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6,9 12,15 18,9"></polyline>
+            </svg>
+        </div>
+    </div>
+    
+    <div class="vault-actions-bar">
+        <button class="export-vault-btn" title="Export Vault Data">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7,10 12,15 17,10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Export
+        </button>
+    </div>
+</div>
+
+            <div class="vault-section">
+                <h3 class="section-heading">🗄️ Encrypted Password Vault</h3>
+                <ul class="vault-list" id="vaultList">
+                    <li style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                        <div class="loading-secure">🔑</div>
+                        Loading encrypted vault securely...
+                    </li>
+                </ul>
+            </div>
+        </div>
+        {% else %}
+        <div class="card password-vault">
+            <h2 class="card-title">🔐 Professional Encrypted Vault</h2>
+            <div class="login-prompt">
+                <div class="security-visual">
+                    <div class="security-icon-large">🛡️</div>
+                    <div class="security-layers">
+                        <div class="layer">HTTPS</div>
+                        <div class="layer">AES-256</div>
+                        <div class="layer">PBKDF2</div>
+                    </div>
+                </div>
+                <h3>Professional Password Security</h3>
+                <p>Access your military-grade encrypted vault with enterprise security features</p>
+                <div class="security-features">
+                    <div class="security-feature">✅ HTTPS Encryption</div>
+                    <div class="security-feature">✅ Zero-Knowledge Architecture</div>
+                    <div class="security-feature">✅ Military-Grade AES-256</div>
+                    <div class="security-feature">✅ Real-time Breach Detection</div>
+                    <div class="security-feature">✅ Session Security</div>
+                    <div class="security-feature">✅ Access Logging</div>
+                </div>
+                <button class="auth-btn primary-cta" id="loginPromptBtn">🔐 Access Secure Vault</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Security Best Practices -->
+        <div class="security-best-practices">
+            <h3>🔒 Professional Security Guidelines</h3>
+            <div class="practices-grid">
+                <div class="practice-item">
+                    <div class="practice-icon">🔄</div>
+                    <h4>Regular Rotation</h4>
+                    <p>Change passwords every 90 days for critical accounts like banking and email</p>
+                </div>
+                <div class="practice-item">
+                    <div class="practice-icon">🚫</div>
+                    <h4>Unique Passwords</h4>
+                    <p>Never reuse passwords across different services or accounts</p>
+                </div>
+                <div class="practice-item">
+                    <div class="practice-icon">📱</div>
+                    <h4>Two-Factor Authentication</h4>
+                    <p>Always enable 2FA/MFA when available for additional security</p>
+                </div>
+                <div class="practice-item">
+                    <div class="practice-icon">🔍</div>
+                    <h4>Monitor Accounts</h4>
+                    <p>Regularly check for suspicious activity and unauthorized access</p>
+                </div>
+                <div class="practice-item">
+                    <div class="practice-icon">⚠️</div>
+                    <h4>Phishing Awareness</h4>
+                    <p>Be vigilant against social engineering and phishing attempts</p>
+                </div>
+                <div class="practice-item">
+                    <div class="practice-icon">🏢</div>
+                    <h4>Compliance</h4>
+                    <p>Follow your organization's security policies and procedures</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical Security Notice -->
+        <div class="critical-security-notice">
+            <h3>🚨 Important Security Information</h3>
+            <div class="notice-grid">
+                <div class="notice-item">
+                    <h4>🛡️ Enhanced Security Features</h4>
+                    <ul>
+                        <li>HTTPS/TLS encryption for all data transmission</li>
+                        <li>AES-256 encryption for password storage</li>
+                        <li>PBKDF2 key derivation with 600,000 iterations</li>
+                        <li>Rate limiting and brute force protection</li>
+                        <li>Security event logging and monitoring</li>
+                        <li>Account lockout after failed attempts</li>
+                    </ul>
+                </div>
+                <div class="notice-item">
+                    <h4>⚠️ Security Limitations</h4>
+                    <ul>
+                        <li>Self-hosted application - security depends on hosting environment</li>
+                        <li>No professional security audit conducted</li>
+                        <li>Not certified by security organizations</li>
+                        <li>Use strong, unique master password</li>
+                        <li>Enable device security (lock screen, etc.)</li>
+                        <li>Keep software and browser updated</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="critical-reminder">
+                <p><strong>Security Reality Check:</strong></p>
+                <p>While this application implements professional security measures including HTTPS, AES-256 encryption, and secure key derivation, remember that:</p>
+                <ul>
+                    <li>Security depends on proper hosting and infrastructure</li>
+                    <li>Your master password is the weakest link - make it extremely strong</li>
+                    <li>No system is 100% secure - maintain good security hygiene</li>
+                    <li>Consider using established enterprise solutions for critical business data</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Footer with Terms and Privacy Links -->
+        <div class="footer-links">
+            <a href="{{ url_for('terms') }}" target="_blank">Terms of Service</a>
+            <a href="{{ url_for('privacy') }}" target="_blank">Privacy Policy</a>
+            <a href="mailto:security@vaultguard.local">Security Contact</a>
+            <span style="color: var(--text-secondary); font-size: 0.8rem;">© 202 VaultGuard Secure</span>
+        </div>
+    </div>
+
+    <!-- Auth Modal -->
+    {% if not logged_in %}
+    <div class="auth-modal" id="authModal">
+        <div class="auth-card">
+            <button class="close-btn" id="closeModal">×</button>
+            <h2 class="auth-title" id="authTitle">🔐 VaultGuard Secure Access</h2>
+            <div class="security-auth-notice">
+                <span class="security-icon">🔑</span>
+                <span>HTTPS Protected • Secure Authentication</span>
+            </div>
+            <form class="auth-form" id="authForm" method="POST">
+                <input type="text" class="auth-input" id="authUsername" name="username" placeholder="Username (3+ characters)" required autocomplete="username">
+                <input type="password" class="auth-input" id="authPassword" name="password" placeholder="Master Password (12+ characters)" required autocomplete="current-password">
+                <div class="password-requirements">
+                    <small>Strong password required: 12+ chars, uppercase, lowercase, numbers, symbols</small>
+                </div>
+                <button type="submit" class="auth-submit" id="authSubmit">Secure Login</button>
+            </form>
+            <p class="auth-switch">
+                <span id="authSwitchText">Don't have an account?</span>
+                <a href="#" class="auth-link" id="authSwitchLink">Create Secure Account</a>
+            </p>
+            <div class="auth-security-info">
+                <h4>Security Features:</h4>
+                <ul>
+                    <li>HTTPS encryption for all data</li>
+                    <li>Account lockout after 3 failed attempts</li>
+                    <li>Session timeout for security (30 minutes)</li>
+                    <li>Zero-knowledge encryption</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        // Enhanced security status checker
+        function checkSecurityStatus() {
+            const isHTTPS = location.protocol === 'https:';
+            const securityBadge = document.getElementById('securityBadge');
+            const httpsStatus = document.getElementById('httpsStatus');
+            const httpsIndicator = document.getElementById('httpsIndicator');
+            
+            if (securityBadge) {
+                if (isHTTPS) {
+                    securityBadge.innerHTML = '🔒 HTTPS Secured';
+                    securityBadge.style.background = 'linear-gradient(135deg, #2ed573, #17d97a)';
+                    securityBadge.style.color = 'white';
+                } else {
+                    securityBadge.innerHTML = '⚠️ HTTP (Not Secure)';
+                    securityBadge.style.background = 'linear-gradient(135deg, #ff4757, #ff3742)';
+                    securityBadge.style.color = 'white';
+                }
+            }
+
+            // Update HTTPS status alert
+            if (httpsStatus) {
+                if (!isHTTPS) {
+                    httpsStatus.innerHTML = `
+                        <div class="https-warning">
+                            🚨 <strong>Security Warning:</strong> You are using HTTP instead of HTTPS. 
+                            Your data may be vulnerable to interception. Please use HTTPS for maximum security.
+                        </div>
+                    `;
+                    httpsStatus.style.display = 'block';
+                } else {
+                    httpsStatus.innerHTML = `
+                        <div class="https-secure">
+                            🔒 <strong>Secure Connection:</strong> HTTPS encryption is active. 
+                            Your data is protected during transmission.
+                        </div>
+                    `;
+                    httpsStatus.style.display = 'block';
+                    // Hide after 3 seconds
+                    setTimeout(() => {
+                        httpsStatus.style.display = 'none';
+                    }, 3000);
+                }
+            }
+
+            // Update security indicator
+            if (httpsIndicator) {
+                if (!isHTTPS) {
+                    httpsIndicator.classList.remove('active');
+                    httpsIndicator.querySelector('.indicator-icon').textContent = '⚠️';
+                    httpsIndicator.style.borderColor = 'var(--accent-red)';
+                    httpsIndicator.style.background = 'rgba(255, 71, 87, 0.1)';
+                }
+            }
+        }
+
+        // Session timeout warning
+        let sessionWarningShown = false;
+        let sessionTimeout = 25 * 60 * 1000; // 25 minutes (5 min before 30 min timeout)
+
+        function showSessionWarning() {
+            if (!sessionWarningShown && document.body.classList.contains('logged-in')) {
+                sessionWarningShown = true;
+                if (typeof showNotification === 'function') {
+                    showNotification('Session expires in 5 minutes. Save your work!', 'warning');
+                }
+            }
+        }
+
+        // Initialize security status and session management
+        document.addEventListener('DOMContentLoaded', () => {
+            checkSecurityStatus();
+            
+            // Security warning for HTTP
+            if (location.protocol !== 'https:') {
+                setTimeout(() => {
+                    if (typeof showNotification === 'function') {
+                        showNotification('Security Warning: Use HTTPS for maximum protection', 'warning');
+                    }
+                }, 2000);
+            }
+
+            // Session timeout warning (only for logged in users)
+            if (document.body.classList.contains('logged-in')) {
+                setTimeout(showSessionWarning, sessionTimeout);
+            }
+
+            // Force show analyzer sections (fix for display issue)
+            // Remove this code - we want sections hidden initially
+            // const strengthSection = document.getElementById('strengthSection');
+            // const analysisResults = document.getElementById('analysisResults');
+            // const policySection = document.getElementById('policySection');
+            
+            // if (strengthSection) strengthSection.style.display = 'block';
+            // if (analysisResults) analysisResults.style.display = 'grid';
+            // if (policySection) policySection.style.display = 'block';
+        });
+
+        // Enhanced clipboard security
+        function secureClipboardClear() {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText('').catch(() => {
+                    // Fallback: try to clear with dummy text
+                    navigator.clipboard.writeText('clipboard_cleared_for_security').catch(() => {});
+                });
+            }
+        }
+
+        // Clear clipboard on page unload
+        window.addEventListener('beforeunload', () => {
+            secureClipboardClear();
+        });
+
+        // Clear clipboard after 30 seconds of any copy operation
+        let clipboardTimeout;
+        document.addEventListener('copy', () => {
+            clearTimeout(clipboardTimeout);
+            clipboardTimeout = setTimeout(secureClipboardClear, 30000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Information - VaultGuard Secure</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body data-theme="dark">
+    <header class="header">
+        <div class="header-content">
+            <a href="{{ url_for('home') }}" class="logo">
+                <div class="logo-icon">🛡️</div>
+                <span>VaultGuard <span class="secure-badge">SECURE</span></span>
+            </a>
+            <div class="header-actions">
+                <a href="{{ url_for('home') }}" class="auth-btn">Back to Home</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h1 style="text-align: center; color: var(--accent-blue); margin-bottom: 2rem;">VaultGuard Security Documentation</h1>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 3rem;">
+                Comprehensive security architecture and incident response procedures
+            </p>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">Security Architecture</h2>
+                <div class="security-best-practices">
+                    <div class="practices-grid">
+                        <div class="practice-item">
+                            <div class="practice-icon">🔐</div>
+                            <h4>AES-256 Encryption</h4>
+                            <p>All passwords encrypted with military-grade AES-256 before database storage</p>
+                        </div>
+                        <div class="practice-item">
+                            <div class="practice-icon">🔑</div>
+                            <h4>PBKDF2 Key Derivation</h4>
+                            <p>600,000 iterations with SHA-256 for maximum security against brute force</p>
+                        </div>
+                        <div class="practice-item">
+                            <div class="practice-icon">🌐</div>
+                            <h4>HTTPS Enforcement</h4>
+                            <p>All data transmission protected with TLS encryption</p>
+                        </div>
+                        <div class="practice-item">
+                            <div class="practice-icon">🛡️</div>
+                            <h4>Zero-Knowledge</h4>
+                            <p>Server cannot decrypt your passwords - only you have the key</p>
+                        </div>
+                        <div class="practice-item">
+                            <div class="practice-icon">🔒</div>
+                            <h4>Account Lockout</h4>
+                            <p>Protection against brute force with progressive lockout periods</p>
+                        </div>
+                        <div class="practice-item">
+                            <div class="practice-icon">📊</div>
+                            <h4>Security Monitoring</h4>
+                            <p>Real-time logging and monitoring of all security events</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-yellow);">Security Incident Response Plan</h2>
+                
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Immediate Response (0-1 Hours)</h3>
+                <div style="background: rgba(255, 167, 2, 0.1); border: 1px solid rgba(255, 167, 2, 0.3); padding: 1.5rem; border-radius: 12px; margin: 1rem 0;">
+                    <h4 style="color: var(--accent-yellow);">Incident Detection</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Monitor security logs for anomalies</li>
+                        <li>User reports of suspicious activity</li>
+                        <li>Automated security alerts</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-yellow); margin-top: 1rem;">Initial Assessment</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Determine scope and severity</li>
+                        <li>Identify affected users/systems</li>
+                        <li>Document timeline of events</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-yellow); margin-top: 1rem;">Immediate Actions</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Lock compromised accounts</li>
+                        <li>Isolate affected systems</li>
+                        <li>Preserve evidence</li>
+                    </ul>
+                </div>
+
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Short-term Response (1-24 Hours)</h3>
+                <div style="background: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.3); padding: 1.5rem; border-radius: 12px; margin: 1rem 0;">
+                    <h4 style="color: var(--accent-blue);">Investigation</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Analyze attack vectors</li>
+                        <li>Determine data exposure</li>
+                        <li>Assess system integrity</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-blue); margin-top: 1rem;">Communication</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Notify affected users</li>
+                        <li>Provide guidance on protective measures</li>
+                        <li>Document all communications</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-blue); margin-top: 1rem;">Remediation</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Patch vulnerabilities</li>
+                        <li>Reset compromised credentials</li>
+                        <li>Implement additional safeguards</li>
+                    </ul>
+                </div>
+
+                <h3 style="color: var(--accent-blue); margin-top: 1.5rem;">Long-term Response (24+ Hours)</h3>
+                <div style="background: rgba(46, 213, 115, 0.1); border: 1px solid rgba(46, 213, 115, 0.3); padding: 1.5rem; border-radius: 12px; margin: 1rem 0;">
+                    <h4 style="color: var(--accent-green);">Recovery</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Restore normal operations</li>
+                        <li>Monitor for continued threats</li>
+                        <li>Validate system security</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-green); margin-top: 1rem;">Lessons Learned</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Conduct post-incident review</li>
+                        <li>Update security procedures</li>
+                        <li>Implement preventive measures</li>
+                    </ul>
+                    
+                    <h4 style="color: var(--accent-green); margin-top: 1rem;">Reporting</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Document incident fully</li>
+                        <li>Report to authorities if required</li>
+                        <li>Update security policies</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-red);">User Notification Template</h2>
+                <div style="background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.3); padding: 1.5rem; border-radius: 12px;">
+                    <p style="font-style: italic; color: var(--accent-red); font-weight: 600;">"SECURITY NOTICE: We have detected [incident type] affecting your account. Please immediately:"</p>
+                    <ul style="margin-left: 1.5rem; margin-top: 1rem;">
+                        <li>Change your master password</li>
+                        <li>Review account activity</li>
+                        <li>Enable additional security measures</li>
+                        <li>Contact us if you notice unusual activity</li>
+                    </ul>
+                    <p style="margin-top: 1rem; font-style: italic;">We are taking all necessary steps to secure our systems and protect your data."</p>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-green);">Security Best Practices for Users</h2>
+                <div class="practices-grid">
+                    <div class="practice-item">
+                        <div class="practice-icon">🔑</div>
+                        <h4>Strong Master Password</h4>
+                        <p>Use 20+ characters with mixed case, numbers, and symbols</p>
+                    </div>
+                    <div class="practice-item">
+                        <div class="practice-icon">🔄</div>
+                        <h4>Regular Updates</h4>
+                        <p>Change passwords regularly, especially after security alerts</p>
+                    </div>
+                    <div class="practice-item">
+                        <div class="practice-icon">🌐</div>
+                        <h4>Secure Connection</h4>
+                        <p>Always use HTTPS and avoid public WiFi for sensitive operations</p>
+                    </div>
+                    <div class="practice-item">
+                        <div class="practice-icon">📱</div>
+                        <h4>Device Security</h4>
+                        <p>Enable screen locks and keep your devices updated</p>
+                    </div>
+                </div>
+            </section>
+
+            <section style="margin-bottom: 2rem;">
+                <h2 style="color: var(--accent-blue);">Technical Specifications</h2>
+                <div style="background: var(--glass-bg); border: 1px solid var(--glass-border); padding: 2rem; border-radius: 12px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+                        <div>
+                            <h4 style="color: var(--accent-green); margin-bottom: 1rem;">Encryption</h4>
+                            <ul style="margin-left: 1.5rem;">
+                                <li><strong>Algorithm:</strong> AES-256-CBC</li>
+                                <li><strong>Key Derivation:</strong> PBKDF2-SHA256</li>
+                                <li><strong>Iterations:</strong> 600,000</li>
+                                <li><strong>Salt:</strong> 64-byte random</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: var(--accent-blue); margin-bottom: 1rem;">Authentication</h4>
+                            <ul style="margin-left: 1.5rem;">
+                            <ul style="margin-left: 1.5rem;">
+                                <li><strong>Password Hashing:</strong> bcrypt (12 rounds)</li>
+                                <li><strong>Session Management:</strong> Flask-Login</li>
+                                <li><strong>Lockout Policy:</strong> 3 attempts, 60 min lockout</li>
+                                <li><strong>Session Timeout:</strong> 30 minutes</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: var(--accent-yellow); margin-bottom: 1rem;">Transport Security</h4>
+                            <ul style="margin-left: 1.5rem;">
+                                <li><strong>Protocol:</strong> HTTPS/TLS 1.2+</li>
+                                <li><strong>HSTS:</strong> Enabled in production</li>
+                                <li><strong>Certificate:</strong> Self-signed (dev)</li>
+                                <li><strong>Cipher Suites:</strong> Strong only</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: var(--accent-red); margin-bottom: 1rem;">Security Headers</h4>
+                            <ul style="margin-left: 1.5rem;">
+                                <li><strong>X-Frame-Options:</strong> DENY</li>
+                                <li><strong>X-Content-Type-Options:</strong> nosniff</li>
+                                <li><strong>X-XSS-Protection:</strong> 1; mode=block</li>
+                                <li><strong>Referrer-Policy:</strong> strict-origin</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+                <p style="color: var(--text-secondary);">
+                    Security contact: 
+                    <a href="mailto:security@vaultguard.local" style="color: var(--accent-red);">security@vaultguard.local</a>
+                </p>
+                <p style="color: var(--text-secondary); margin-top: 0.5rem; font-size: 0.9rem;">
+                    Report vulnerabilities responsibly • GPG key available on request
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
