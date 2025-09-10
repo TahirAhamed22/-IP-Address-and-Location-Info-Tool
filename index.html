@@ -45,6 +45,54 @@
         <!-- HTTPS Status Alert -->
         <div id="httpsStatus" style="display: none;"></div>
 
+        <!-- Phase 1: Enhanced Security Dashboard for logged-in users -->
+        {% if logged_in %}
+        <div class="security-dashboard">
+            <h2>🛡️ Security Dashboard</h2>
+            <div class="dashboard-grid" id="securityDashboard">
+                <div class="dashboard-card">
+                    <div class="dashboard-icon">🔐</div>
+                    <div class="dashboard-content">
+                        <h3 id="totalPasswords">-</h3>
+                        <p>Total Passwords</p>
+                    </div>
+                </div>
+                <div class="dashboard-card critical" id="breachedCard">
+                    <div class="dashboard-icon">🚨</div>
+                    <div class="dashboard-content">
+                        <h3 id="breachedPasswords">-</h3>
+                        <p>Breached Passwords</p>
+                    </div>
+                </div>
+                <div class="dashboard-card warning" id="weakCard">
+                    <div class="dashboard-icon">⚠️</div>
+                    <div class="dashboard-content">
+                        <h3 id="weakPasswords">-</h3>
+                        <p>Weak Passwords</p>
+                    </div>
+                </div>
+                <div class="dashboard-card info" id="oldCard">
+                    <div class="dashboard-icon">⏰</div>
+                    <div class="dashboard-content">
+                        <h3 id="oldPasswords">-</h3>
+                        <p>Old Passwords (90+ days)</p>
+                    </div>
+                </div>
+                <div class="dashboard-card score" id="securityScoreCard">
+                    <div class="dashboard-icon">📊</div>
+                    <div class="dashboard-content">
+                        <h3 id="securityScore">-</h3>
+                        <p>Security Score</p>
+                    </div>
+                </div>
+                <div class="dashboard-actions">
+                    <button class="dashboard-btn" id="runSecurityCheck">🔍 Run Full Security Check</button>
+                    <button class="dashboard-btn secondary" id="notificationSettings">⚙️ Notification Settings</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Security Status -->
         <div class="security-status-card">
             <div class="security-header">
@@ -62,9 +110,9 @@
                         <span class="indicator-icon">⚡</span>
                         <span>Real-time Monitoring</span>
                     </div>
-                    <div class="security-item active">
+                    <div class="security-item active" id="breachMonitoringIndicator">
                         <span class="indicator-icon">🔍</span>
-                        <span>Breach Detection</span>
+                        <span>Live Breach Detection</span>
                     </div>
                 </div>
             </div>
@@ -78,7 +126,7 @@
                 <div class="trust-badge">🔒 HTTPS Protected</div>
                 <div class="trust-badge">🛡️ Military Encryption</div>
                 <div class="trust-badge">⚡ Real-time Security</div>
-                <div class="trust-badge">🔍 Breach Monitoring</div>
+                <div class="trust-badge">🔍 HaveIBeenPwned Integration</div>
             </div>
         </div>
 
@@ -87,7 +135,7 @@
             <h2 class="card-title">🛡️ Military-Grade Password Analyzer</h2>
             <div class="security-notice">
                 <span class="security-icon">🔑</span>
-                <span>All analysis performed securely with HTTPS encryption</span>
+                <span>All analysis performed securely with HTTPS encryption + HaveIBeenPwned live checking</span>
             </div>
             
             <div class="password-input-group">
@@ -120,7 +168,7 @@
                 </div>
                 <div class="analysis-item">
                     <div class="analysis-icon">🔍</div>
-                    <div class="analysis-label">Breach status</div>
+                    <div class="analysis-label">HaveIBeenPwned Status</div>
                     <div class="analysis-value" id="breachStatus">-</div>
                 </div>
             </div>
@@ -220,6 +268,7 @@
                     <span class="encryption-badge">🛡️ PBKDF2</span>
                     <span class="encryption-badge">🔒 HTTPS</span>
                     <span class="encryption-badge">⚡ Real-time</span>
+                    <span class="encryption-badge">🔍 HaveIBeenPwned</span>
                 </div>
             </div>
             
@@ -234,66 +283,94 @@
                         <input type="text" class="form-input" id="vault-username" placeholder="Your username or email" maxlength="120">
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="vault-password" placeholder="Enter password to encrypt">
+                        <div class="security-hint">🔑 All passwords encrypted with military-grade AES-256 before storage</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Category (Optional)</label>
+                        <select class="form-input" id="vault-category">
+                            <option value="General">General</option>
+                            <option value="Banking">Banking & Finance</option>
+                            <option value="Social">Social Media</option>
+                            <option value="Work">Work & Business</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Email">Email</option>
+                            <option value="Cloud">Cloud Services</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <input type="password" class="form-input" id="vault-password" placeholder="Enter password to encrypt">
-                    <div class="security-hint">🔑 All passwords encrypted with military-grade AES-256 before storage</div>
+                    <label class="form-label">Notes (Optional)</label>
+                    <textarea class="form-input" id="vault-notes" placeholder="Any additional notes or security questions" rows="2"></textarea>
                 </div>
                 <button class="save-btn" id="save-password-btn">💾 Encrypt & Store Securely</button>
             </div>
-<!-- Enhanced Vault Search and Sort Controls -->
-<div class="vault-controls-enhanced">
-    <div class="search-container">
-        <div class="search-input-wrapper">
-            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-            </svg>
-            <input 
-                type="text" 
-                id="vault-search" 
-                placeholder="Search your encrypted passwords..." 
-                class="enhanced-search-input"
-                autocomplete="off"
-                spellcheck="false"
-            >
-            <button class="clear-search-btn" id="clearSearch" style="display: none;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
-    </div>
-    
-    <div class="sort-container">
-        <label for="vault-sort" class="sort-label">Sort by:</label>
-        <div class="sort-select-wrapper">
-            <select id="vault-sort" class="enhanced-sort-select">
-                <option value="updated_at">Recently Updated</option>
-                <option value="created_at">Recently Added</option>
-                <option value="site">Site Name (A-Z)</option>
-                <option value="username">Username (A-Z)</option>
-                <option value="access_count">Most Accessed</option>
-                <option value="alphabetical">Alphabetical</option>
-            </select>
-            <svg class="sort-dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6,9 12,15 18,9"></polyline>
-            </svg>
-        </div>
-    </div>
-    
-    <div class="vault-actions-bar">
-        <button class="export-vault-btn" title="Export Vault Data">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7,10 12,15 17,10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Export
-        </button>
-    </div>
-</div>
+
+            <!-- Enhanced Vault Search and Sort Controls -->
+            <div class="vault-controls-enhanced">
+                <div class="search-container">
+                    <div class="search-input-wrapper">
+                        <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                        <input 
+                            type="text" 
+                            id="vault-search" 
+                            placeholder="Search your encrypted passwords..." 
+                            class="enhanced-search-input"
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <button class="clear-search-btn" id="clearSearch" style="display: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="sort-container">
+                    <label for="vault-sort" class="sort-label">Sort by:</label>
+                    <div class="sort-select-wrapper">
+                        <select id="vault-sort" class="enhanced-sort-select">
+                            <option value="updated_at">Recently Updated</option>
+                            <option value="created_at">Recently Added</option>
+                            <option value="site">Site Name (A-Z)</option>
+                            <option value="username">Username (A-Z)</option>
+                            <option value="access_count">Most Accessed</option>
+                            <option value="category">Category</option>
+                            <option value="security_score">Security Score</option>
+                        </select>
+                        <svg class="sort-dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6,9 12,15 18,9"></polyline>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="vault-actions-bar">
+                    <button class="export-vault-btn" title="Export Vault Data" id="exportVault">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export
+                    </button>
+                    <button class="breach-check-btn" title="Check All for Breaches" id="checkAllBreaches">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 12l2 2 4-4"></path>
+                            <circle cx="12" cy="12" r="9"></circle>
+                        </svg>
+                        Check All
+                    </button>
+                </div>
+            </div>
 
             <div class="vault-section">
                 <h3 class="section-heading">🗄️ Encrypted Password Vault</h3>
@@ -315,6 +392,7 @@
                         <div class="layer">HTTPS</div>
                         <div class="layer">AES-256</div>
                         <div class="layer">PBKDF2</div>
+                        <div class="layer">HaveIBeenPwned</div>
                     </div>
                 </div>
                 <h3>Professional Password Security</h3>
@@ -324,13 +402,62 @@
                     <div class="security-feature">✅ Zero-Knowledge Architecture</div>
                     <div class="security-feature">✅ Military-Grade AES-256</div>
                     <div class="security-feature">✅ Real-time Breach Detection</div>
+                    <div class="security-feature">✅ HaveIBeenPwned Integration</div>
                     <div class="security-feature">✅ Session Security</div>
-                    <div class="security-feature">✅ Access Logging</div>
+                    <div class="security-feature">✅ Advanced Security Logging</div>
                 </div>
                 <button class="auth-btn primary-cta" id="loginPromptBtn">🔐 Access Secure Vault</button>
             </div>
         </div>
         {% endif %}
+
+        <!-- Phase 1: New Notification Settings Modal -->
+        <div class="notification-modal" id="notificationModal" style="display: none;">
+            <div class="notification-modal-content">
+                <div class="modal-header">
+                    <h3>⚙️ Notification Settings</h3>
+                    <button class="close-modal-btn" id="closeNotificationModal">×</button>
+                </div>
+                <div class="notification-settings">
+                    <div class="setting-item">
+                        <div class="setting-header">
+                            <h4>🚨 Breach Notifications</h4>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="breachNotifications" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <p class="setting-description">Get notified when your passwords are found in new data breaches</p>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <div class="setting-header">
+                            <h4>⏰ Password Age Warnings</h4>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="passwordAgeWarnings" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <p class="setting-description">Get alerts when passwords are older than 90 days and need rotation</p>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <div class="setting-header">
+                            <h4>🔔 Security Notifications</h4>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="securityNotifications" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <p class="setting-description">Get notifications about security events, logins, and system updates</p>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="save-settings-btn" id="saveNotificationSettings">💾 Save Settings</button>
+                    <button class="cancel-settings-btn" id="cancelNotificationSettings">Cancel</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Security Best Practices -->
         <div class="security-best-practices">
@@ -369,51 +496,53 @@
             </div>
         </div>
 
-        <!-- Critical Security Notice -->
+        <!-- Enhanced Security Notice -->
         <div class="critical-security-notice">
-            <h3>🚨 Important Security Information</h3>
+            <h3>🚨 Enhanced Security Information - Phase 1</h3>
             <div class="notice-grid">
                 <div class="notice-item">
-                    <h4>🛡️ Enhanced Security Features</h4>
+                    <h4>🛡️ New Security Features</h4>
                     <ul>
-                        <li>HTTPS/TLS encryption for all data transmission</li>
-                        <li>AES-256 encryption for password storage</li>
-                        <li>PBKDF2 key derivation with 600,000 iterations</li>
-                        <li>Rate limiting and brute force protection</li>
-                        <li>Security event logging and monitoring</li>
-                        <li>Account lockout after failed attempts</li>
+                        <li>✅ Real-time HaveIBeenPwned breach checking</li>
+                        <li>✅ Advanced security event logging and monitoring</li>
+                        <li>✅ Password aging and rotation reminders</li>
+                        <li>✅ Security health dashboard with metrics</li>
+                        <li>✅ Customizable security notifications</li>
+                        <li>✅ Enhanced breach detection and alerts</li>
+                        <li>✅ Improved timestamp formatting</li>
+                        <li>✅ Better light mode visibility</li>
                     </ul>
                 </div>
                 <div class="notice-item">
-                    <h4>⚠️ Security Limitations</h4>
+                    <h4>⚠️ Security Considerations</h4>
                     <ul>
-                        <li>Self-hosted application - security depends on hosting environment</li>
-                        <li>No professional security audit conducted</li>
-                        <li>Not certified by security organizations</li>
-                        <li>Use strong, unique master password</li>
-                        <li>Enable device security (lock screen, etc.)</li>
-                        <li>Keep software and browser updated</li>
+                        <li>HaveIBeenPwned API requires internet connection</li>
+                        <li>Breach checking uses k-anonymity for privacy</li>
+                        <li>Security logs stored locally for monitoring</li>
+                        <li>Regular security checks recommended weekly</li>
+                        <li>Password rotation alerts based on 90-day cycle</li>
+                        <li>Keep master password extremely strong and unique</li>
                     </ul>
                 </div>
             </div>
             <div class="critical-reminder">
-                <p><strong>Security Reality Check:</strong></p>
-                <p>While this application implements professional security measures including HTTPS, AES-256 encryption, and secure key derivation, remember that:</p>
+                <p><strong>Phase 1 Enhancements:</strong></p>
+                <p>This version includes major security improvements with real breach monitoring, enhanced logging, and proactive notifications:</p>
                 <ul>
-                    <li>Security depends on proper hosting and infrastructure</li>
-                    <li>Your master password is the weakest link - make it extremely strong</li>
-                    <li>No system is 100% secure - maintain good security hygiene</li>
-                    <li>Consider using established enterprise solutions for critical business data</li>
+                    <li>Live breach detection using HaveIBeenPwned database</li>
+                    <li>Security dashboard with health metrics and alerts</li>
+                    <li>Advanced password aging and rotation management</li>
+                    <li>Enhanced user notification preferences</li>
                 </ul>
             </div>
         </div>
 
-        <!-- Footer with Terms and Privacy Links -->
+        <!-- Footer with Enhanced Links -->
         <div class="footer-links">
             <a href="{{ url_for('terms') }}" target="_blank">Terms of Service</a>
             <a href="{{ url_for('privacy') }}" target="_blank">Privacy Policy</a>
             <a href="mailto:security@vaultguard.local">Security Contact</a>
-            <span style="color: var(--text-secondary); font-size: 0.8rem;">© 202 VaultGuard Secure</span>
+            <span style="color: var(--text-secondary); font-size: 0.8rem;">© {{ current_year or 2024 }} VaultGuard Secure - Phase 1 Enhanced</span>
         </div>
     </div>
 
@@ -425,7 +554,7 @@
             <h2 class="auth-title" id="authTitle">🔐 VaultGuard Secure Access</h2>
             <div class="security-auth-notice">
                 <span class="security-icon">🔑</span>
-                <span>HTTPS Protected • Secure Authentication</span>
+                <span>HTTPS Protected • Enhanced Security • HaveIBeenPwned Integration</span>
             </div>
             <form class="auth-form" id="authForm" method="POST">
                 <input type="text" class="auth-input" id="authUsername" name="username" placeholder="Username (3+ characters)" required autocomplete="username">
@@ -440,12 +569,13 @@
                 <a href="#" class="auth-link" id="authSwitchLink">Create Secure Account</a>
             </p>
             <div class="auth-security-info">
-                <h4>Security Features:</h4>
+                <h4>Enhanced Security Features:</h4>
                 <ul>
-                    <li>HTTPS encryption for all data</li>
+                    <li>HTTPS encryption for all data transmission</li>
                     <li>Account lockout after 3 failed attempts</li>
-                    <li>Session timeout for security (30 minutes)</li>
-                    <li>Zero-knowledge encryption</li>
+                    <li>Advanced security event logging</li>
+                    <li>Real-time breach monitoring</li>
+                    <li>Zero-knowledge encryption architecture</li>
                 </ul>
             </div>
         </div>
@@ -455,20 +585,21 @@
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     
     <script>
-        // Enhanced security status checker
+        // Enhanced security status checker with Phase 1 features
         function checkSecurityStatus() {
             const isHTTPS = location.protocol === 'https:';
             const securityBadge = document.getElementById('securityBadge');
             const httpsStatus = document.getElementById('httpsStatus');
             const httpsIndicator = document.getElementById('httpsIndicator');
+            const breachMonitoringIndicator = document.getElementById('breachMonitoringIndicator');
             
             if (securityBadge) {
                 if (isHTTPS) {
-                    securityBadge.innerHTML = '🔒 HTTPS Secured';
+                    securityBadge.innerHTML = '🔒 HTTPS + HaveIBeenPwned Secured';
                     securityBadge.style.background = 'linear-gradient(135deg, #2ed573, #17d97a)';
                     securityBadge.style.color = 'white';
                 } else {
-                    securityBadge.innerHTML = '⚠️ HTTP (Not Secure)';
+                    securityBadge.innerHTML = '⚠️ HTTP (Limited Security)';
                     securityBadge.style.background = 'linear-gradient(135deg, #ff4757, #ff3742)';
                     securityBadge.style.color = 'white';
                 }
@@ -480,26 +611,26 @@
                     httpsStatus.innerHTML = `
                         <div class="https-warning">
                             🚨 <strong>Security Warning:</strong> You are using HTTP instead of HTTPS. 
-                            Your data may be vulnerable to interception. Please use HTTPS for maximum security.
+                            Enhanced security features like HaveIBeenPwned integration may be limited.
                         </div>
                     `;
                     httpsStatus.style.display = 'block';
                 } else {
                     httpsStatus.innerHTML = `
                         <div class="https-secure">
-                            🔒 <strong>Secure Connection:</strong> HTTPS encryption is active. 
-                            Your data is protected during transmission.
+                            🔒 <strong>Enhanced Security Active:</strong> HTTPS encryption + HaveIBeenPwned monitoring enabled. 
+                            Your data is fully protected with Phase 1 security enhancements.
                         </div>
                     `;
                     httpsStatus.style.display = 'block';
-                    // Hide after 3 seconds
+                    // Hide after 4 seconds
                     setTimeout(() => {
                         httpsStatus.style.display = 'none';
-                    }, 3000);
+                    }, 4000);
                 }
             }
 
-            // Update security indicator
+            // Update security indicators
             if (httpsIndicator) {
                 if (!isHTTPS) {
                     httpsIndicator.classList.remove('active');
@@ -508,9 +639,73 @@
                     httpsIndicator.style.background = 'rgba(255, 71, 87, 0.1)';
                 }
             }
+
+            // Update breach monitoring indicator
+            if (breachMonitoringIndicator) {
+                breachMonitoringIndicator.classList.add('active');
+                breachMonitoringIndicator.style.borderColor = 'var(--accent-green)';
+                breachMonitoringIndicator.style.background = 'rgba(46, 213, 115, 0.1)';
+            }
         }
 
-        // Session timeout warning
+        // Phase 1: Enhanced security dashboard functionality
+        async function loadSecurityDashboard() {
+            if (!document.body.classList.contains('logged-in')) return;
+            
+            try {
+                const response = await fetch('/api/me');
+                const data = await response.json();
+                
+                if (data.success && data.authenticated) {
+                    const stats = data.security_stats;
+                    
+                    document.getElementById('totalPasswords').textContent = data.vault_count;
+                    document.getElementById('breachedPasswords').textContent = stats.breached_passwords;
+                    document.getElementById('weakPasswords').textContent = stats.weak_passwords;
+                    document.getElementById('oldPasswords').textContent = stats.old_passwords;
+                    document.getElementById('securityScore').textContent = stats.security_score + '%';
+                    
+                    // Update dashboard card states
+                    updateDashboardCardStates(stats);
+                    
+                    // Load notification preferences
+                    loadNotificationPreferences(data.preferences);
+                }
+            } catch (error) {
+                console.error('Failed to load security dashboard:', error);
+            }
+        }
+
+        function updateDashboardCardStates(stats) {
+            const breachedCard = document.getElementById('breachedCard');
+            const weakCard = document.getElementById('weakCard');
+            const oldCard = document.getElementById('oldCard');
+            const scoreCard = document.getElementById('securityScoreCard');
+            
+            // Update card states based on values
+            breachedCard.className = stats.breached_passwords > 0 ? 'dashboard-card critical' : 'dashboard-card success';
+            weakCard.className = stats.weak_passwords > 0 ? 'dashboard-card warning' : 'dashboard-card success';
+            oldCard.className = stats.old_passwords > 0 ? 'dashboard-card info' : 'dashboard-card success';
+            
+            // Security score color coding
+            if (stats.security_score >= 80) {
+                scoreCard.className = 'dashboard-card success';
+            } else if (stats.security_score >= 60) {
+                scoreCard.className = 'dashboard-card warning';
+            } else {
+                scoreCard.className = 'dashboard-card critical';
+            }
+        }
+
+        function loadNotificationPreferences(preferences) {
+            if (preferences) {
+                document.getElementById('breachNotifications').checked = preferences.breach_notifications;
+                document.getElementById('passwordAgeWarnings').checked = preferences.password_age_warnings;
+                document.getElementById('securityNotifications').checked = preferences.security_notifications;
+            }
+        }
+
+        // Session timeout warning - enhanced
         let sessionWarningShown = false;
         let sessionTimeout = 25 * 60 * 1000; // 25 minutes (5 min before 30 min timeout)
 
@@ -518,38 +713,38 @@
             if (!sessionWarningShown && document.body.classList.contains('logged-in')) {
                 sessionWarningShown = true;
                 if (typeof showNotification === 'function') {
-                    showNotification('Session expires in 5 minutes. Save your work!', 'warning');
+                    showNotification('🔔 Session expires in 5 minutes. Save your work and consider running a security check!', 'warning');
                 }
             }
         }
 
-        // Initialize security status and session management
-        document.addEventListener('DOMContentLoaded', () => {
+        // Initialize enhanced security status and session management
+        document.addEventListener('DOMContentLoaded', async () => {
             checkSecurityStatus();
+            
+            // Load security dashboard if logged in
+            await loadSecurityDashboard();
             
             // Security warning for HTTP
             if (location.protocol !== 'https:') {
                 setTimeout(() => {
                     if (typeof showNotification === 'function') {
-                        showNotification('Security Warning: Use HTTPS for maximum protection', 'warning');
+                        showNotification('⚠️ Security Warning: Use HTTPS for full HaveIBeenPwned integration', 'warning');
                     }
                 }, 2000);
+            } else {
+                // Show Phase 1 welcome message
+                setTimeout(() => {
+                    if (typeof showNotification === 'function') {
+                        showNotification('🚀 Phase 1 Enhanced: Now with HaveIBeenPwned integration!', 'info');
+                    }
+                }, 3000);
             }
 
             // Session timeout warning (only for logged in users)
             if (document.body.classList.contains('logged-in')) {
                 setTimeout(showSessionWarning, sessionTimeout);
             }
-
-            // Force show analyzer sections (fix for display issue)
-            // Remove this code - we want sections hidden initially
-            // const strengthSection = document.getElementById('strengthSection');
-            // const analysisResults = document.getElementById('analysisResults');
-            // const policySection = document.getElementById('policySection');
-            
-            // if (strengthSection) strengthSection.style.display = 'block';
-            // if (analysisResults) analysisResults.style.display = 'grid';
-            // if (policySection) policySection.style.display = 'block';
         });
 
         // Enhanced clipboard security
@@ -557,7 +752,7 @@
             if (navigator.clipboard) {
                 navigator.clipboard.writeText('').catch(() => {
                     // Fallback: try to clear with dummy text
-                    navigator.clipboard.writeText('clipboard_cleared_for_security').catch(() => {});
+                    navigator.clipboard.writeText('clipboard_cleared_for_security_phase1').catch(() => {});
                 });
             }
         }
