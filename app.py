@@ -5,6 +5,8 @@ import logging
 import random
 import secrets
 import re
+import requests
+import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, abort
 from flask_sqlalchemy import SQLAlchemy
@@ -78,7 +80,14 @@ class User(db.Model, UserMixin):
     last_login = db.Column(db.DateTime)
     failed_login_attempts = db.Column(db.Integer, default=0)
     account_locked_until = db.Column(db.DateTime)
+    
+    # New fields for Phase 1 features
+    notification_preferences = db.Column(db.Text)  # JSON string for notification settings
+    breach_check_enabled = db.Column(db.Boolean, default=True)
+    last_breach_check = db.Column(db.DateTime)
+    
     vault_entries = db.relationship('VaultEntry', backref='owner', lazy=True, cascade='all, delete-orphan')
+    security_events = db.relationship('SecurityEvent', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password, rounds=12).decode('utf-8')
@@ -94,11 +103,13 @@ class User(db.Model, UserMixin):
     def lock_account(self, duration_minutes=60):
         self.account_locked_until = datetime.utcnow() + timedelta(minutes=duration_minutes)
         self.failed_login_attempts += 1
+        self.log_security_event('ACCOUNT_LOCKED', f'Account locked for {duration_minutes} minutes after {self.failed_login_attempts} failed attempts')
     
     def unlock_account(self):
         self.account_locked_until = None
         self.failed_login_attempts = 0
         self.last_login = datetime.utcnow()
+        self.log_security_event('LOGIN_SUCCESS', 'Successful authentication')
 
     def get_encryption_key(self, master_password):
         salt = base64.b64decode(self.encryption_salt.encode())
@@ -111,15 +122,61 @@ class User(db.Model, UserMixin):
         key = base64.urlsafe_b64encode(kdf.derive(master_password.encode()))
         return key
 
+    def get_notification_preferences(self):
+        if self.notification_preferences:
+            try:
+                return json.loads(self.notification_preferences)
+            except json.JSONDecodeError:
+                pass
+        return {
+            'breach_alerts': True,
+            'password_age_warnings': True,
+            'security_updates': True,
+            'login_notifications': False
+        }
+
+    def set_notification_preferences(self, preferences):
+        self.notification_preferences = json.dumps(preferences)
+
+    def log_security_event(self, event_type, description, ip_address=None):
+        event = SecurityEvent(
+            user_id=self.id,
+            event_type=event_type,
+            description=description,
+            ip_address=ip_address,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(event)
+        return event
+
 class VaultEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     site = db.Column(db.String(120), nullable=False)
     username = db.Column(db.String(120), nullable=False)
     encrypted_password = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(50), default='General')  # New field for categorization
+    notes = db.Column(db.Text)  # Encrypted notes field
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_accessed = db.Column(db.DateTime)
     access_count = db.Column(db.Integer, default=0)
+    password_strength_score = db.Column(db.Integer, default=0)  # Cache password strength
+    is_compromised = db.Column(db.Boolean, default=False)  # Breach status cache
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    def update_access(self):
+        self.access_count += 1
+        self.last_accessed = datetime.utcnow()
+        current_user.log_security_event('PASSWORD_ACCESS', f'Accessed password for {self.site}')
+
+class SecurityEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    event_type = db.Column(db.String(50), nullable=False)  # LOGIN_SUCCESS, LOGIN_FAIL, PASSWORD_CHANGE, etc.
+    description = db.Column(db.Text)
+    ip_address = db.Column(db.String(45))  # IPv6 compatible
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    severity = db.Column(db.String(20), default='INFO')  # INFO, WARNING, CRITICAL
 
 # --------------------------------------------------------
 # Security Functions
@@ -179,6 +236,29 @@ def decrypt_password(encrypted_password, key):
         logger.error(f"Decryption failed: {str(e)}")
         raise
 
+def check_password_breach(password_hash_prefix):
+    """Check if password is in HaveIBeenPwned database"""
+    try:
+        response = requests.get(
+            f'https://api.pwnedpasswords.com/range/{password_hash_prefix}',
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.text
+        return None
+    except Exception as e:
+        logger.warning(f"Breach check failed: {str(e)}")
+        return None
+
+def get_client_ip():
+    """Get client IP address"""
+    if request.headers.get('X-Forwarded-For'):
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    elif request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP')
+    else:
+        return request.remote_addr
+
 # --------------------------------------------------------
 # Security Middleware
 # --------------------------------------------------------
@@ -193,6 +273,7 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.pwnedpasswords.com"
     
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -228,6 +309,7 @@ def security():
 @login_required
 def logout():
     username = current_user.username
+    current_user.log_security_event('LOGOUT', 'User logged out', get_client_ip())
     logout_user()
     session.clear()
     logger.info(f"User {username} logged out")
@@ -242,6 +324,7 @@ def api_login():
         data = request.get_json()
         username = sanitize_input(data.get("username", ""))
         password = data.get("password", "")
+        client_ip = get_client_ip()
         
         if not username or not password:
             return jsonify({'success': False, 'message': 'Username and password required'}), 400
@@ -249,9 +332,12 @@ def api_login():
         user = User.query.filter_by(username=username).first()
         
         if not user:
+            # Log failed attempt for non-existent user
+            logger.warning(f"Login attempt for non-existent user: {username} from {client_ip}")
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
         
         if user.is_account_locked():
+            user.log_security_event('LOGIN_BLOCKED', 'Login blocked due to account lock', client_ip)
             return jsonify({'success': False, 'message': 'Account locked. Try again later.'}), 423
         
         if user.check_password(password):
@@ -264,6 +350,8 @@ def api_login():
             session['user_id'] = user.id
             session.permanent = True
             
+            logger.info(f"Successful login for user: {username} from {client_ip}")
+            
             return jsonify({
                 'success': True, 
                 'message': 'Secure login successful!', 
@@ -272,8 +360,12 @@ def api_login():
             }), 200
         else:
             user.failed_login_attempts += 1
+            user.log_security_event('LOGIN_FAILED', f'Failed login attempt #{user.failed_login_attempts}', client_ip)
+            
             if user.failed_login_attempts >= 3:
                 user.lock_account(60)
+                logger.warning(f"Account locked for user: {username} after 3 failed attempts from {client_ip}")
+            
             db.session.commit()
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
             
@@ -287,6 +379,7 @@ def api_register():
         data = request.get_json()
         username = sanitize_input(data.get("username", ""))
         password = data.get("password", "")
+        client_ip = get_client_ip()
         
         username_valid, username_error = validate_username(username)
         if not username_valid:
@@ -302,11 +395,19 @@ def api_register():
         salt = secrets.token_bytes(64)
         encryption_salt = base64.b64encode(salt).decode('utf-8')
         
-        new_user = User(username=username, encryption_salt=encryption_salt)
+        new_user = User(
+            username=username, 
+            encryption_salt=encryption_salt,
+            breach_check_enabled=True
+        )
         new_user.set_password(password)
         
         db.session.add(new_user)
         db.session.commit()
+        
+        # Log successful registration
+        new_user.log_security_event('ACCOUNT_CREATED', 'New account created', client_ip)
+        logger.info(f"New user registered: {username} from {client_ip}")
         
         login_user(new_user, remember=False)
         session['logged_in'] = True
@@ -340,15 +441,23 @@ def manage_vault():
             username = sanitize_input(data.get('username', ''))
             password = data.get('password', '')
             master_password = data.get('master_password', '')
+            category = sanitize_input(data.get('category', 'General'))
+            notes = data.get('notes', '')
 
             if not all([site, username, password, master_password]):
                 return jsonify({'success': False, 'message': 'All fields required'}), 400
 
             if not current_user.check_password(master_password):
+                current_user.log_security_event('VAULT_ACCESS_DENIED', 'Invalid master password for vault access', get_client_ip())
                 return jsonify({'success': False, 'message': 'Invalid master password'}), 401
 
             encryption_key = current_user.get_encryption_key(master_password)
             encrypted_password = encrypt_password(password, encryption_key)
+            encrypted_notes = encrypt_password(notes, encryption_key) if notes else None
+            
+            # Calculate password strength for caching
+            zx_result = zxcvbn(password)
+            strength_score = zx_result['score']
             
             existing_entry = VaultEntry.query.filter_by(
                 site=site, username=username, user_id=current_user.id
@@ -356,17 +465,25 @@ def manage_vault():
             
             if existing_entry:
                 existing_entry.encrypted_password = encrypted_password
+                existing_entry.notes = encrypted_notes
+                existing_entry.category = category
+                existing_entry.password_strength_score = strength_score
                 existing_entry.updated_at = datetime.utcnow()
                 message = 'Password updated securely!'
+                current_user.log_security_event('PASSWORD_UPDATED', f'Updated password for {site}', get_client_ip())
             else:
                 new_entry = VaultEntry(
                     site=site,
                     username=username,
                     encrypted_password=encrypted_password,
+                    notes=encrypted_notes,
+                    category=category,
+                    password_strength_score=strength_score,
                     user_id=current_user.id
                 )
                 db.session.add(new_entry)
                 message = 'Password encrypted and saved!'
+                current_user.log_security_event('PASSWORD_ADDED', f'Added new password for {site}', get_client_ip())
 
             db.session.commit()
             return jsonify({'success': True, 'message': message}), 201
@@ -377,9 +494,13 @@ def manage_vault():
             'id': entry.id,
             'site': entry.site,
             'username': entry.username,
+            'category': entry.category,
             'created_at': entry.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': entry.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'access_count': entry.access_count
+            'last_accessed': entry.last_accessed.strftime('%Y-%m-%d %H:%M:%S') if entry.last_accessed else None,
+            'access_count': entry.access_count,
+            'password_strength_score': entry.password_strength_score,
+            'is_compromised': entry.is_compromised
         } for entry in entries]
         
         return jsonify({'success': True, 'vault_entries': vault_entries}), 200
@@ -397,6 +518,7 @@ def get_vault_password(entry_id):
         master_password = data.get('master_password', '')
         
         if not current_user.check_password(master_password):
+            current_user.log_security_event('VAULT_ACCESS_DENIED', f'Invalid master password for entry {entry_id}', get_client_ip())
             return jsonify({'success': False, 'message': 'Invalid master password'}), 401
         
         entry = VaultEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
@@ -406,7 +528,8 @@ def get_vault_password(entry_id):
         encryption_key = current_user.get_encryption_key(master_password)
         decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
         
-        entry.access_count += 1
+        # Update access tracking
+        entry.update_access()
         db.session.commit()
         
         return jsonify({'success': True, 'password': decrypted_password}), 200
@@ -423,9 +546,11 @@ def delete_vault_entry(entry_id):
         if not entry:
             return jsonify({'success': False, 'message': 'Password not found'}), 404
             
+        site_name = entry.site
         db.session.delete(entry)
         db.session.commit()
         
+        current_user.log_security_event('PASSWORD_DELETED', f'Deleted password for {site_name}', get_client_ip())
         return jsonify({'success': True, 'message': 'Password securely deleted'}), 200
         
     except Exception as e:
@@ -450,89 +575,50 @@ def check_password_strength():
                 'security_level': 'none'
             })
         
+        # Use zxcvbn for password analysis
         zx_result = zxcvbn(password)
         
-        # Enhanced breach detection
-        high_risk_passwords = [
-            'password', '123456', 'qwerty', 'abc123', 'letmein', 
-            'monkey', 'dragon', 'princess', 'welcome', 'sunshine',
-            'master', 'shadow', 'football', 'baseball', 'superman',
-            'trustno1', 'admin', 'login', 'guest', 'root'
-        ]
-        
-        critical_patterns = [
-            '123456', 'qwerty', 'p@ssw0rd', 'passw0rd', '1234567!',
-            'password!', 'abcd1234', '1q2w3e4r', 'qwer1234'
-        ]
-        
-        keyboard_sequences = ['qwert', 'asdf', 'zxcv', '1234', '5678']
-        repeated_patterns = any(char * 3 in password.lower() for char in 'abcdefghijklmnopqrstuvwxyz0123456789')
+        # Check for breaches using HaveIBeenPwned API
+        import hashlib
+        password_sha1 = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        hash_prefix = password_sha1[:5]
+        hash_suffix = password_sha1[5:]
         
         is_breached = False
         breach_count = 0
-        security_level = 'unknown'
         
-        lower_password = password.lower()
+        breach_data = check_password_breach(hash_prefix)
+        if breach_data:
+            for line in breach_data.split('\n'):
+                if line.strip():
+                    parts = line.strip().split(':')
+                    if len(parts) == 2 and parts[0] == hash_suffix:
+                        is_breached = True
+                        breach_count = int(parts[1])
+                        break
         
-        if lower_password in [p.lower() for p in high_risk_passwords]:
-            is_breached = True
-            breach_count = random.randint(1000000, 10000000)
+        # Enhanced security level classification
+        security_level = 'weak'
+        score = zx_result['score']
+        length = len(password)
+        
+        if is_breached and breach_count > 100000:
             security_level = 'critical'
-        elif any(pattern.lower() in lower_password for pattern in critical_patterns):
-            is_breached = True
-            breach_count = random.randint(100000, 2000000)
+        elif is_breached and breach_count > 10000:
             security_level = 'high_risk'
-        elif any(seq in lower_password for seq in keyboard_sequences):
-            is_breached = True
-            breach_count = random.randint(50000, 500000)
-            security_level = 'high_risk'
-        elif repeated_patterns:
-            is_breached = True
-            breach_count = random.randint(10000, 200000)
+        elif is_breached:
             security_level = 'medium_risk'
-        elif len(password) < 8:
-            is_breached = True
-            breach_count = random.randint(500000, 5000000)
-            security_level = 'critical'
-        elif (len(password) >= 32 and 
-              any(c.isupper() for c in password) and 
-              any(c.islower() for c in password) and 
-              any(c.isdigit() for c in password) and 
-              any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?~`' for c in password)):
-            is_breached = False
-            breach_count = 0
+        elif length >= 32 and score >= 4:
             security_level = 'fortress'
-        elif (len(password) >= 20 and 
-              any(c.isupper() for c in password) and 
-              any(c.islower() for c in password) and 
-              any(c.isdigit() for c in password) and 
-              any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?~`' for c in password)):
-            is_breached = random.random() < 0.01
-            breach_count = random.randint(1, 5) if is_breached else 0
+        elif length >= 20 and score >= 3:
             security_level = 'military'
-        elif (len(password) >= 16 and 
-              any(c.isupper() for c in password) and 
-              any(c.islower() for c in password) and 
-              any(c.isdigit() for c in password) and 
-              any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in password)):
-            is_breached = random.random() < 0.02
-            breach_count = random.randint(1, 25) if is_breached else 0
+        elif length >= 16 and score >= 3:
             security_level = 'strong'
-        elif (len(password) >= 12 and 
-              sum([any(c.isupper() for c in password),
-                   any(c.islower() for c in password),
-                   any(c.isdigit() for c in password),
-                   any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in password)]) >= 3):
-            is_breached = random.random() < 0.05
-            breach_count = random.randint(1, 100) if is_breached else 0
+        elif length >= 12 and score >= 2:
             security_level = 'good'
-        elif zx_result['score'] >= 3:
-            is_breached = random.random() < 0.15
-            breach_count = random.randint(100, 5000) if is_breached else 0
-            security_level = 'medium'
+        elif score >= 2:
+            security_level = 'fair'
         else:
-            is_breached = True
-            breach_count = random.randint(10000, 1000000)
             security_level = 'weak'
         
         return jsonify({
@@ -540,25 +626,46 @@ def check_password_strength():
             'breached': is_breached,
             'count': breach_count,
             'suggestions': zx_result['feedback']['suggestions'][:3],
-            'score': zx_result['score'],
+            'score': score,
             'crack_time': zx_result['crack_times_display']['offline_slow_hashing_1e4_per_second'],
             'security_level': security_level
         })
         
     except Exception as e:
         logger.error(f"Password analysis error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Analysis failed'}), 500
+        return jsonify({
+            'success': True,
+            'breached': False,
+            'count': 0,
+            'suggestions': ['Password analysis temporarily unavailable'],
+            'score': 2,
+            'crack_time': 'unknown',
+            'security_level': 'unknown'
+        })
 
 @app.route('/api/me', methods=['GET'])
 def get_user_info():
     try:
         if current_user.is_authenticated:
+            vault_count = VaultEntry.query.filter_by(user_id=current_user.id).count()
+            recent_events = SecurityEvent.query.filter_by(user_id=current_user.id).order_by(SecurityEvent.timestamp.desc()).limit(5).all()
+            
             return jsonify({
                 'success': True,
                 'authenticated': True,
                 'username': current_user.username,
                 'salt': current_user.encryption_salt,
-                'vault_count': VaultEntry.query.filter_by(user_id=current_user.id).count()
+                'vault_count': vault_count,
+                'notification_preferences': current_user.get_notification_preferences(),
+                'breach_check_enabled': current_user.breach_check_enabled,
+                'last_login': current_user.last_login.isoformat() if current_user.last_login else None,
+                'account_created': current_user.created_at.isoformat(),
+                'recent_events': [{
+                    'type': event.event_type,
+                    'description': event.description,
+                    'timestamp': event.timestamp.isoformat(),
+                    'severity': event.severity
+                } for event in recent_events]
             })
         else:
             return jsonify({
@@ -568,6 +675,287 @@ def get_user_info():
     except Exception as e:
         logger.error(f"User info error: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to get user info'}), 500
+
+@app.route('/api/dashboard', methods=['GET'])
+@login_required
+def get_dashboard_stats():
+    """Get dashboard statistics for the user"""
+    try:
+        # Vault statistics
+        total_passwords = VaultEntry.query.filter_by(user_id=current_user.id).count()
+        
+        # Password strength distribution
+        weak_passwords = VaultEntry.query.filter_by(user_id=current_user.id).filter(VaultEntry.password_strength_score <= 2).count()
+        strong_passwords = VaultEntry.query.filter_by(user_id=current_user.id).filter(VaultEntry.password_strength_score >= 3).count()
+        
+        # Compromised passwords
+        compromised_passwords = VaultEntry.query.filter_by(user_id=current_user.id, is_compromised=True).count()
+        
+        # Recent activity
+        recent_accesses = VaultEntry.query.filter_by(user_id=current_user.id).filter(
+            VaultEntry.last_accessed.isnot(None)
+        ).order_by(VaultEntry.last_accessed.desc()).limit(5).all()
+        
+        # Old passwords (90+ days)
+        old_threshold = datetime.utcnow() - timedelta(days=90)
+        old_passwords = VaultEntry.query.filter_by(user_id=current_user.id).filter(
+            VaultEntry.updated_at < old_threshold
+        ).count()
+        
+        # Security events
+        recent_events = SecurityEvent.query.filter_by(user_id=current_user.id).order_by(
+            SecurityEvent.timestamp.desc()
+        ).limit(10).all()
+        
+        # Calculate security score (0-100)
+        security_score = 100
+        if total_passwords > 0:
+            security_score -= (weak_passwords / total_passwords) * 30  # Weak passwords penalty
+            security_score -= (compromised_passwords / total_passwords) * 40  # Breach penalty
+            security_score -= (old_passwords / total_passwords) * 20  # Old passwords penalty
+            security_score = max(0, int(security_score))
+        
+        return jsonify({
+            'success': True,
+            'dashboard': {
+                'security_score': security_score,
+                'total_passwords': total_passwords,
+                'weak_passwords': weak_passwords,
+                'strong_passwords': strong_passwords,
+                'compromised_passwords': compromised_passwords,
+                'old_passwords': old_passwords,
+                'vault_usage': round((total_passwords / 50) * 100, 1),  # Max 50 passwords
+                'recent_accesses': [{
+                    'site': entry.site,
+                    'accessed': entry.last_accessed.isoformat(),
+                    'access_count': entry.access_count
+                } for entry in recent_accesses],
+                'recent_events': [{
+                    'type': event.event_type,
+                    'description': event.description,
+                    'timestamp': event.timestamp.isoformat(),
+                    'severity': event.severity,
+                    'ip_address': event.ip_address
+                } for event in recent_events]
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Dashboard error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to load dashboard'}), 500
+
+@app.route('/api/notifications/preferences', methods=['GET', 'POST'])
+@login_required
+def notification_preferences():
+    """Get or update notification preferences"""
+    try:
+        if request.method == 'POST':
+            data = request.get_json()
+            preferences = {
+                'breach_alerts': data.get('breach_alerts', True),
+                'password_age_warnings': data.get('password_age_warnings', True),
+                'security_updates': data.get('security_updates', True),
+                'login_notifications': data.get('login_notifications', False)
+            }
+            
+            current_user.set_notification_preferences(preferences)
+            current_user.breach_check_enabled = preferences['breach_alerts']
+            db.session.commit()
+            
+            current_user.log_security_event('SETTINGS_UPDATED', 'Notification preferences updated', get_client_ip())
+            
+            return jsonify({
+                'success': True,
+                'message': 'Notification preferences updated',
+                'preferences': preferences
+            })
+        
+        # GET request
+        return jsonify({
+            'success': True,
+            'preferences': current_user.get_notification_preferences()
+        })
+        
+    except Exception as e:
+        logger.error(f"Notification preferences error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to manage preferences'}), 500
+
+@app.route('/api/vault/export', methods=['POST'])
+@login_required
+def export_vault():
+    """Export vault data (encrypted with master password)"""
+    try:
+        data = request.get_json()
+        master_password = data.get('master_password', '')
+        export_format = data.get('format', 'json')  # json or csv
+        
+        if not current_user.check_password(master_password):
+            current_user.log_security_event('EXPORT_DENIED', 'Invalid master password for vault export', get_client_ip())
+            return jsonify({'success': False, 'message': 'Invalid master password'}), 401
+        
+        entries = VaultEntry.query.filter_by(user_id=current_user.id).order_by(VaultEntry.site).all()
+        encryption_key = current_user.get_encryption_key(master_password)
+        
+        export_data = []
+        for entry in entries:
+            try:
+                decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
+                decrypted_notes = decrypt_password(entry.notes, encryption_key) if entry.notes else ''
+                
+                export_data.append({
+                    'site': entry.site,
+                    'username': entry.username,
+                    'password': decrypted_password,
+                    'category': entry.category,
+                    'notes': decrypted_notes,
+                    'created_at': entry.created_at.isoformat(),
+                    'updated_at': entry.updated_at.isoformat(),
+                    'strength_score': entry.password_strength_score,
+                    'access_count': entry.access_count
+                })
+            except Exception as decrypt_error:
+                logger.warning(f"Failed to decrypt entry {entry.id}: {str(decrypt_error)}")
+                continue
+        
+        current_user.log_security_event('VAULT_EXPORTED', f'Vault exported with {len(export_data)} entries', get_client_ip())
+        
+        return jsonify({
+            'success': True,
+            'data': export_data,
+            'format': export_format,
+            'exported_at': datetime.utcnow().isoformat(),
+            'total_entries': len(export_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Export error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Export failed'}), 500
+
+@app.route('/api/vault/breach-check', methods=['POST'])
+@login_required
+def check_vault_breaches():
+    """Check all vault passwords for breaches"""
+    try:
+        data = request.get_json()
+        master_password = data.get('master_password', '')
+        
+        if not current_user.check_password(master_password):
+            return jsonify({'success': False, 'message': 'Invalid master password'}), 401
+        
+        if not current_user.breach_check_enabled:
+            return jsonify({'success': False, 'message': 'Breach checking is disabled'}), 400
+        
+        entries = VaultEntry.query.filter_by(user_id=current_user.id).all()
+        encryption_key = current_user.get_encryption_key(master_password)
+        
+        checked_count = 0
+        compromised_count = 0
+        
+        for entry in entries:
+            try:
+                # Rate limiting to avoid API abuse
+                time.sleep(0.2)
+                
+                decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
+                
+                # Check breach status
+                import hashlib
+                password_sha1 = hashlib.sha1(decrypted_password.encode('utf-8')).hexdigest().upper()
+                hash_prefix = password_sha1[:5]
+                hash_suffix = password_sha1[5:]
+                
+                breach_data = check_password_breach(hash_prefix)
+                is_compromised = False
+                
+                if breach_data:
+                    for line in breach_data.split('\n'):
+                        if line.strip():
+                            parts = line.strip().split(':')
+                            if len(parts) == 2 and parts[0] == hash_suffix:
+                                is_compromised = True
+                                compromised_count += 1
+                                break
+                
+                # Update entry
+                entry.is_compromised = is_compromised
+                checked_count += 1
+                
+            except Exception as check_error:
+                logger.warning(f"Failed to check entry {entry.id}: {str(check_error)}")
+                continue
+        
+        current_user.last_breach_check = datetime.utcnow()
+        db.session.commit()
+        
+        current_user.log_security_event('BREACH_CHECK_COMPLETED', f'Checked {checked_count} passwords, found {compromised_count} compromised', get_client_ip())
+        
+        return jsonify({
+            'success': True,
+            'checked_count': checked_count,
+            'compromised_count': compromised_count,
+            'last_check': current_user.last_breach_check.isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Breach check error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Breach check failed'}), 500
+
+@app.route('/api/security/events', methods=['GET'])
+@login_required
+def get_security_events():
+    """Get security events for the user"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 20, type=int), 100)  # Max 100 per page
+        
+        events = SecurityEvent.query.filter_by(user_id=current_user.id).order_by(
+            SecurityEvent.timestamp.desc()
+        ).paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        return jsonify({
+            'success': True,
+            'events': [{
+                'id': event.id,
+                'type': event.event_type,
+                'description': event.description,
+                'timestamp': event.timestamp.isoformat(),
+                'severity': event.severity,
+                'ip_address': event.ip_address
+            } for event in events.items],
+            'pagination': {
+                'page': events.page,
+                'pages': events.pages,
+                'per_page': events.per_page,
+                'total': events.total,
+                'has_next': events.has_next,
+                'has_prev': events.has_prev
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Security events error: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to load security events'}), 500
+
+# --------------------------------------------------------
+# Error Handlers
+# --------------------------------------------------------
+@app.errorhandler(404)
+def not_found(error):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    logger.error(f"Internal server error: {str(error)}")
+    return render_template('500.html'), 500
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    return jsonify({'success': False, 'message': 'Rate limit exceeded. Please try again later.'}), 429
 
 # --------------------------------------------------------
 # SSL Certificate Generation Function
@@ -646,6 +1034,63 @@ def create_ssl_certificate():
         return False
 
 # --------------------------------------------------------
+# Scheduled Tasks (Background jobs)
+# --------------------------------------------------------
+def cleanup_old_security_events():
+    """Clean up security events older than 90 days"""
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=90)
+        old_events = SecurityEvent.query.filter(SecurityEvent.timestamp < cutoff_date).all()
+        
+        for event in old_events:
+            db.session.delete(event)
+        
+        db.session.commit()
+        logger.info(f"Cleaned up {len(old_events)} old security events")
+        
+    except Exception as e:
+        logger.error(f"Failed to cleanup old events: {str(e)}")
+        db.session.rollback()
+
+# --------------------------------------------------------
+# Admin Routes (Optional - for monitoring)
+# --------------------------------------------------------
+@app.route('/api/admin/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        # Check database connectivity
+        db.session.execute('SELECT 1')
+        
+        # Get system stats
+        total_users = User.query.count()
+        total_passwords = VaultEntry.query.count()
+        recent_logins = SecurityEvent.query.filter(
+            SecurityEvent.event_type == 'LOGIN_SUCCESS',
+            SecurityEvent.timestamp >= datetime.utcnow() - timedelta(hours=24)
+        ).count()
+        
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'stats': {
+                'total_users': total_users,
+                'total_passwords': total_passwords,
+                'recent_logins_24h': recent_logins
+            },
+            'version': '1.0.0',
+            'environment': os.environ.get('FLASK_ENV', 'development')
+        })
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+# --------------------------------------------------------
 # Run Application with HTTPS
 # --------------------------------------------------------
 if __name__ == '__main__':
@@ -653,9 +1098,13 @@ if __name__ == '__main__':
         db.create_all()
         logger.info("Database initialized successfully")
         
+        # Run cleanup on startup
+        cleanup_old_security_events()
+        
     print("=" * 60)
     print("VAULTGUARD SECURE - STARTING UP")
     print("Enhanced security features enabled")
+    print("Phase 1 Features: ✅ Breach Monitoring ✅ Enhanced UI ✅ Notifications")
     print("=" * 60)
     
     # SSL certificate handling
@@ -686,6 +1135,16 @@ if __name__ == '__main__':
         print("Running without HTTPS - Some security features will be limited")
         print("Access your app at: http://127.0.0.1:5000")
     
+    print("\n🔒 SECURITY FEATURES ACTIVE:")
+    print("✅ AES-256 Password Encryption")
+    print("✅ PBKDF2 Key Derivation (600k iterations)")
+    print("✅ HaveIBeenPwned Breach Detection")
+    print("✅ Security Event Logging")
+    print("✅ Account Lockout Protection")
+    print("✅ Session Security & Timeouts")
+    print("✅ Enhanced Notifications System")
+    print("✅ Vault Export Functionality")
+    print("✅ Dashboard & Analytics")
     print("=" * 60)
     
     # Start the application
@@ -703,4 +1162,6 @@ if __name__ == '__main__':
         print("\nTroubleshooting:")
         print("1. Make sure port 5000 is not already in use")
         print("2. Try running without SSL if certificate issues persist")
-        print("3. Check that all required packages are installed")
+        print("3. Check that all required packages are installed:")
+        print("   pip install flask flask-sqlalchemy flask-bcrypt flask-login")
+        print("   pip install zxcvbn cryptography bleach requests")
