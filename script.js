@@ -1,4 +1,4 @@
-// ===== GLOBAL VARIABLES - ENHANCED FOR PHASE 1 =====
+// ===== ENHANCED GLOBAL VARIABLES =====
 let analysisEnabled = true;
 let currentUserSalt = null;
 let masterPasswordCache = null;
@@ -8,7 +8,8 @@ let isLoginMode = true;
 let vaultData = [];
 let vaultFilter = '';
 let vaultSortBy = 'updated_at';
-let securityDashboardData = null;
+let securityScore = 0;
+let dashboardData = null;
 
 let passwordGeneratorSettings = {
     length: 16,
@@ -21,14 +22,13 @@ let passwordGeneratorSettings = {
 let performanceMetrics = {
     pageLoadTime: 0,
     analysisCount: 0,
-    apiCallCount: 0,
-    breachCheckCount: 0
+    apiCallCount: 0
 };
 
 // DOM Elements Storage
 let elements = {};
 
-// ===== INITIALIZATION FUNCTIONS =====
+// ===== ENHANCED INITIALIZATION =====
 function initializeElements() {
     elements = {
         // Main interface elements
@@ -41,6 +41,8 @@ function initializeElements() {
         strengthText: document.getElementById('strengthText'),
         crackTime: document.getElementById('crackTime'),
         breachStatus: document.getElementById('breachStatus'),
+        entropyValue: document.getElementById('entropyValue'),
+        lengthValue: document.getElementById('lengthValue'),
         
         // Policy icons
         lengthIcon: document.getElementById('lengthIcon'),
@@ -58,7 +60,7 @@ function initializeElements() {
         
         // Generator controls
         lengthSlider: document.getElementById('lengthSlider'),
-        lengthValue: document.getElementById('lengthValue'),
+        lengthValueDisplay: document.getElementById('lengthValue'),
         generateBtn: document.getElementById('generateBtn'),
         generatedPassword: document.getElementById('generatedPassword'),
         copyGenerated: document.getElementById('copyGenerated'),
@@ -76,6 +78,8 @@ function initializeElements() {
         authSwitchText: document.getElementById('authSwitchText'),
         authSwitchLink: document.getElementById('authSwitchLink'),
         authUsername: document.getElementById('authUsername'),
+        authEmail: document.getElementById('authEmail'),
+        authPhone: document.getElementById('authPhone'),
         authPassword: document.getElementById('authPassword'),
         loginBtn: document.getElementById('loginBtn'),
         loginPromptBtn: document.getElementById('loginPromptBtn'),
@@ -90,31 +94,23 @@ function initializeElements() {
         vaultCategory: document.getElementById('vault-category'),
         vaultNotes: document.getElementById('vault-notes'),
         
-        // Phase 1: New dashboard elements
-        securityDashboard: document.getElementById('securityDashboard'),
-        totalPasswords: document.getElementById('totalPasswords'),
-        breachedPasswords: document.getElementById('breachedPasswords'),
-        weakPasswords: document.getElementById('weakPasswords'),
-        oldPasswords: document.getElementById('oldPasswords'),
-        securityScore: document.getElementById('securityScore'),
-        runSecurityCheck: document.getElementById('runSecurityCheck'),
-        notificationSettings: document.getElementById('notificationSettings'),
-        
-        // Phase 1: Notification modal elements
-        notificationModal: document.getElementById('notificationModal'),
-        closeNotificationModal: document.getElementById('closeNotificationModal'),
-        breachNotifications: document.getElementById('breachNotifications'),
-        passwordAgeWarnings: document.getElementById('passwordAgeWarnings'),
-        securityNotifications: document.getElementById('securityNotifications'),
-        saveNotificationSettings: document.getElementById('saveNotificationSettings'),
-        cancelNotificationSettings: document.getElementById('cancelNotificationSettings'),
-        
-        // Enhanced vault controls
+        // Enhanced controls
         vaultSearch: document.getElementById('vault-search'),
-        vaultSort: document.getElementById('vault-sort'),
         clearSearch: document.getElementById('clearSearch'),
+        vaultSort: document.getElementById('vault-sort'),
         exportVault: document.getElementById('exportVault'),
-        checkAllBreaches: document.getElementById('checkAllBreaches')
+        auditVault: document.getElementById('auditVault'),
+        
+        // Dashboard elements
+        securityDashboardBtn: document.getElementById('securityDashboardBtn'),
+        securityDashboard: document.getElementById('securityDashboard'),
+        closeDashboard: document.getElementById('closeDashboard'),
+        securityScoreValue: document.getElementById('securityScoreValue'),
+        
+        // Notification settings
+        notificationSettingsBtn: document.getElementById('notificationSettingsBtn'),
+        notificationSettingsModal: document.getElementById('notificationSettingsModal'),
+        closeNotificationSettings: document.getElementById('closeNotificationSettings')
     };
 }
 
@@ -146,214 +142,21 @@ async function initialize() {
             await loadSecurityDashboard();
         }
         
-        // Initialize password generator if on generator page
+        // Initialize password generator
         initializePasswordGenerator();
         
         // Show security status
         showSecurityStatus();
         
-        // Phase 1: Initialize breach monitoring
-        initializeBreachMonitoring();
-        
         // Record performance metrics
         const pageLoadTime = performance.now() - pageLoadStart;
         recordPerformanceMetric('pageLoadTime', pageLoadTime);
         
-        console.log(`VaultGuard Phase 1 initialized in ${pageLoadTime.toFixed(2)}ms`);
+        console.log(`VaultGuard Enhanced initialized in ${pageLoadTime.toFixed(2)}ms`);
         
     } catch (error) {
         console.error('Initialization error:', error);
         showNotification('Application failed to initialize properly', 'error');
-    }
-}
-
-// ===== PHASE 1: SECURITY DASHBOARD FUNCTIONS =====
-async function loadSecurityDashboard() {
-    if (!document.body.classList.contains('logged-in')) return;
-    
-    try {
-        const response = await fetch('/api/me', {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success && data.authenticated) {
-            securityDashboardData = data.security_stats;
-            updateSecurityDashboard(data);
-            loadNotificationPreferences(data.preferences);
-        }
-    } catch (error) {
-        console.error('Failed to load security dashboard:', error);
-        showNotification('Failed to load security dashboard', 'error');
-    }
-}
-
-function updateSecurityDashboard(data) {
-    const stats = data.security_stats;
-    
-    if (elements.totalPasswords) elements.totalPasswords.textContent = data.vault_count;
-    if (elements.breachedPasswords) elements.breachedPasswords.textContent = stats.breached_passwords;
-    if (elements.weakPasswords) elements.weakPasswords.textContent = stats.weak_passwords;
-    if (elements.oldPasswords) elements.oldPasswords.textContent = stats.old_passwords;
-    if (elements.securityScore) elements.securityScore.textContent = stats.security_score + '%';
-    
-    updateDashboardCardStates(stats);
-}
-
-function updateDashboardCardStates(stats) {
-    const breachedCard = document.getElementById('breachedCard');
-    const weakCard = document.getElementById('weakCard');
-    const oldCard = document.getElementById('oldCard');
-    const scoreCard = document.getElementById('securityScoreCard');
-    
-    if (breachedCard) {
-        breachedCard.className = stats.breached_passwords > 0 ? 'dashboard-card critical' : 'dashboard-card success';
-    }
-    if (weakCard) {
-        weakCard.className = stats.weak_passwords > 0 ? 'dashboard-card warning' : 'dashboard-card success';
-    }
-    if (oldCard) {
-        oldCard.className = stats.old_passwords > 0 ? 'dashboard-card info' : 'dashboard-card success';
-    }
-    
-    if (scoreCard) {
-        if (stats.security_score >= 80) {
-            scoreCard.className = 'dashboard-card success';
-        } else if (stats.security_score >= 60) {
-            scoreCard.className = 'dashboard-card warning';
-        } else {
-            scoreCard.className = 'dashboard-card critical';
-        }
-    }
-}
-
-async function runFullSecurityCheck() {
-    const masterPassword = await getMasterPassword();
-    if (!masterPassword) return;
-    
-    try {
-        updateSecurityCheckButtonState(true);
-        
-        const response = await fetch('/api/security/check-all-passwords', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ master_password: masterPassword })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showNotification(`Security check completed! ${data.breached_found} breached passwords found.`, 
-                           data.breached_found > 0 ? 'warning' : 'success');
-            
-            // Reload dashboard and vault data
-            await loadSecurityDashboard();
-            await loadVaultData();
-            
-            performanceMetrics.breachCheckCount++;
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Security check error:', error);
-        showNotification('Failed to run security check', 'error');
-    } finally {
-        updateSecurityCheckButtonState(false);
-    }
-}
-
-function updateSecurityCheckButtonState(isRunning) {
-    if (!elements.runSecurityCheck) return;
-    
-    if (isRunning) {
-        elements.runSecurityCheck.disabled = true;
-        elements.runSecurityCheck.textContent = '🔍 Checking... Please Wait';
-        elements.runSecurityCheck.style.opacity = '0.7';
-    } else {
-        elements.runSecurityCheck.disabled = false;
-        elements.runSecurityCheck.textContent = '🔍 Run Full Security Check';
-        elements.runSecurityCheck.style.opacity = '1';
-    }
-}
-
-// ===== PHASE 1: NOTIFICATION PREFERENCES =====
-function loadNotificationPreferences(preferences) {
-    if (preferences && elements.breachNotifications) {
-        elements.breachNotifications.checked = preferences.breach_notifications;
-        elements.passwordAgeWarnings.checked = preferences.password_age_warnings;
-        elements.securityNotifications.checked = preferences.security_notifications;
-    }
-}
-
-function openNotificationSettings() {
-    if (elements.notificationModal) {
-        elements.notificationModal.style.display = 'flex';
-        elements.notificationModal.style.animation = 'modalFadeIn 0.3s ease-out';
-    }
-}
-
-function closeNotificationSettings() {
-    if (elements.notificationModal) {
-        elements.notificationModal.style.animation = 'modalFadeOut 0.3s ease-out';
-        setTimeout(() => {
-            elements.notificationModal.style.display = 'none';
-        }, 300);
-    }
-}
-
-async function saveNotificationPreferences() {
-    try {
-        const preferences = {
-            breach_notifications: elements.breachNotifications?.checked || false,
-            password_age_warnings: elements.passwordAgeWarnings?.checked || false,
-            security_notifications: elements.securityNotifications?.checked || false
-        };
-        
-        const response = await fetch('/api/security/notifications', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify(preferences)
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showNotification('Notification preferences saved!', 'success');
-            closeNotificationSettings();
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to save notification preferences:', error);
-        showNotification('Failed to save preferences', 'error');
-    }
-}
-
-// ===== PHASE 1: BREACH MONITORING =====
-function initializeBreachMonitoring() {
-    // Set up periodic breach checking if user has enabled notifications
-    if (document.body.classList.contains('logged-in')) {
-        // Check for breaches every 6 hours
-        setInterval(async () => {
-            try {
-                const response = await fetch('/api/me');
-                const data = await response.json();
-                
-                if (data.success && data.preferences?.breach_notifications) {
-                    // Silent background check - user will be notified if breaches found
-                    console.log('Background breach monitoring active');
-                }
-            } catch (error) {
-                console.error('Background breach monitoring error:', error);
-            }
-        }, 6 * 60 * 60 * 1000); // 6 hours
     }
 }
 
@@ -392,7 +195,7 @@ function updateThemeToggleIcon() {
     }
 }
 
-// ===== EVENT LISTENERS SETUP =====
+// ===== ENHANCED EVENT LISTENERS =====
 function initializeEventListeners() {
     // Password input analyzer
     if (elements.passwordInput) {
@@ -414,46 +217,65 @@ function initializeEventListeners() {
     }
 
     // Password control buttons
+    setupPasswordControls();
+    
+    // Generator controls
+    setupGeneratorControls();
+    
+    // Authentication controls
+    setupAuthenticationControls();
+    
+    // Vault management
+    setupVaultControls();
+    
+    // Enhanced search and sort
+    setupEnhancedVaultControls();
+    
+    // Dashboard controls
+    setupDashboardControls();
+    
+    // Security monitoring
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('keydown', handleKeyboardShortcuts);
+}
+
+function setupPasswordControls() {
     if (elements.toggleVisibility) {
         elements.toggleVisibility.addEventListener('click', togglePasswordVisibility);
     }
-
     if (elements.copyPassword) {
         elements.copyPassword.addEventListener('click', copyPasswordToClipboard);
     }
-
     if (elements.clearPassword) {
         elements.clearPassword.addEventListener('click', clearPasswordInput);
     }
-
     if (elements.generatePassword) {
         elements.generatePassword.addEventListener('click', generateAndAnalyzePassword);
     }
-
     if (elements.pauseBtn) {
         elements.pauseBtn.addEventListener('click', toggleAnalysis);
     }
+}
 
-    // Generator page controls
-    if (elements.lengthSlider && elements.lengthValue) {
+function setupGeneratorControls() {
+    if (elements.lengthSlider && elements.lengthValueDisplay) {
         elements.lengthSlider.addEventListener('input', (e) => {
             updateLengthDisplay(parseInt(e.target.value));
         });
     }
-
+    
     if (elements.generateBtn) {
         elements.generateBtn.addEventListener('click', generateNewPassword);
     }
-
+    
     if (elements.copyGenerated) {
         elements.copyGenerated.addEventListener('click', copyGeneratedPassword);
     }
-
+    
     if (elements.useGenerated) {
         elements.useGenerated.addEventListener('click', useGeneratedPassword);
     }
-
-    // Generator checkboxes
+    
     const checkboxes = [elements.includeUpper, elements.includeLower, elements.includeNumbers, elements.includeSymbols];
     checkboxes.forEach(checkbox => {
         if (checkbox) {
@@ -463,34 +285,35 @@ function initializeEventListeners() {
             });
         }
     });
+}
 
-    // Authentication controls
+function setupAuthenticationControls() {
     if (elements.loginBtn) {
         elements.loginBtn.addEventListener('click', (e) => {
             e.preventDefault();
             openAuthModal();
         });
     }
-
+    
     if (elements.loginPromptBtn) {
         elements.loginPromptBtn.addEventListener('click', openAuthModal);
     }
-
+    
     if (elements.closeModal) {
         elements.closeModal.addEventListener('click', closeAuthModal);
     }
-
+    
     if (elements.authSwitchLink) {
         elements.authSwitchLink.addEventListener('click', (e) => {
             e.preventDefault();
             setAuthMode(!isLoginMode);
         });
     }
-
+    
     if (elements.authForm) {
         elements.authForm.addEventListener('submit', handleAuth);
     }
-
+    
     if (elements.authModal) {
         elements.authModal.addEventListener('click', (e) => {
             if (e.target === elements.authModal) {
@@ -498,76 +321,64 @@ function initializeEventListeners() {
             }
         });
     }
+}
 
-    // Vault management
+function setupVaultControls() {
     if (elements.savePasswordBtn) {
         elements.savePasswordBtn.addEventListener('click', savePassword);
     }
+}
 
-    // Vault search and sort
-    const vaultSearch = document.getElementById('vault-search');
-    if (vaultSearch) {
-        vaultSearch.addEventListener('input', debounce((e) => {
+function setupEnhancedVaultControls() {
+    if (elements.vaultSearch) {
+        elements.vaultSearch.addEventListener('input', debounce((e) => {
             filterVaultEntries(e.target.value);
         }, 300));
-    }
-
-    const vaultSort = document.getElementById('vault-sort');
-    if (vaultSort) {
-        vaultSort.addEventListener('change', (e) => {
-            sortVaultEntries(e.target.value);
-        });
-    }
-
-    if (elements.clearSearch) {
-        elements.clearSearch.addEventListener('click', clearVaultFilter);
-    }
-
-    // Phase 1: New dashboard event listeners
-    if (elements.runSecurityCheck) {
-        elements.runSecurityCheck.addEventListener('click', runFullSecurityCheck);
-    }
-
-    if (elements.notificationSettings) {
-        elements.notificationSettings.addEventListener('click', openNotificationSettings);
-    }
-
-    // Phase 1: Notification modal event listeners
-    if (elements.closeNotificationModal) {
-        elements.closeNotificationModal.addEventListener('click', closeNotificationSettings);
-    }
-
-    if (elements.saveNotificationSettings) {
-        elements.saveNotificationSettings.addEventListener('click', saveNotificationPreferences);
-    }
-
-    if (elements.cancelNotificationSettings) {
-        elements.cancelNotificationSettings.addEventListener('click', closeNotificationSettings);
-    }
-
-    if (elements.notificationModal) {
-        elements.notificationModal.addEventListener('click', (e) => {
-            if (e.target === elements.notificationModal) {
-                closeNotificationSettings();
+        
+        elements.vaultSearch.addEventListener('input', function() {
+            if (elements.clearSearch) {
+                elements.clearSearch.style.display = this.value.length > 0 ? 'block' : 'none';
             }
         });
     }
-
-    // Enhanced vault actions
+    
+    if (elements.clearSearch) {
+        elements.clearSearch.addEventListener('click', () => {
+            elements.vaultSearch.value = '';
+            elements.clearSearch.style.display = 'none';
+            filterVaultEntries('');
+            elements.vaultSearch.focus();
+        });
+    }
+    
+    if (elements.vaultSort) {
+        elements.vaultSort.addEventListener('change', (e) => {
+            sortVaultEntries(e.target.value);
+        });
+    }
+    
     if (elements.exportVault) {
         elements.exportVault.addEventListener('click', exportVaultData);
     }
-
-    if (elements.checkAllBreaches) {
-        elements.checkAllBreaches.addEventListener('click', runFullSecurityCheck);
+    
+    if (elements.auditVault) {
+        elements.auditVault.addEventListener('click', runSecurityAudit);
     }
-
-    // Security monitoring
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('keydown', handleKeyboardShortcuts);
 }
 
-// ===== PASSWORD ANALYSIS FUNCTIONS =====
+function setupDashboardControls() {
+    if (elements.securityDashboardBtn) {
+        elements.securityDashboardBtn.addEventListener('click', toggleSecurityDashboard);
+    }
+    
+    if (elements.closeDashboard) {
+        elements.closeDashboard.addEventListener('click', () => {
+            elements.securityDashboard.style.display = 'none';
+        });
+    }
+}
+
+// ===== ENHANCED PASSWORD ANALYSIS =====
 function analyzePassword(password) {
     if (!password || !analysisEnabled) {
         hideAnalysisSection();
@@ -638,35 +449,13 @@ function analyzePassword(password) {
     updateStrengthMeter(score, strengthClass, strength);
     updateCrackTimeEstimate(score);
     updatePasswordPolicyIcons(hasLength, hasLower, hasUpper, hasDigit, hasSymbol);
+    updatePasswordMetrics(password, score);
     
     // Check password against breach database
-    checkPasswordStrength(password);
+    checkPasswordStrengthAPI(password);
     
     // Show recommendations
     displayPasswordRecommendations(recommendations);
-}
-
-// Add this new function to reset the strength meter
-function resetStrengthMeter() {
-    if (elements.strengthFill) {
-        elements.strengthFill.style.width = '0%';
-        elements.strengthFill.className = 'strength-fill';
-        elements.strengthFill.style.animation = '';
-        elements.strengthFill.style.boxShadow = '';
-    }
-    
-    if (elements.strengthText) {
-        elements.strengthText.textContent = '-';
-        elements.strengthText.className = 'strength-text';
-    }
-    
-    if (elements.crackTime) {
-        elements.crackTime.textContent = '-';
-    }
-    
-    if (elements.breachStatus) {
-        elements.breachStatus.innerHTML = '-';
-    }
 }
 
 function performAdvancedPasswordAnalysis(password) {
@@ -736,7 +525,62 @@ function performAdvancedPasswordAnalysis(password) {
     };
 }
 
-// ===== UI UPDATE FUNCTIONS =====
+function resetStrengthMeter() {
+    if (elements.strengthFill) {
+        elements.strengthFill.style.width = '0%';
+        elements.strengthFill.className = 'strength-fill';
+        elements.strengthFill.style.animation = '';
+        elements.strengthFill.style.boxShadow = '';
+    }
+    
+    if (elements.strengthText) {
+        elements.strengthText.textContent = '-';
+        elements.strengthText.className = 'strength-text';
+    }
+    
+    if (elements.crackTime) {
+        elements.crackTime.textContent = '-';
+    }
+    
+    if (elements.breachStatus) {
+        elements.breachStatus.innerHTML = '-';
+    }
+    
+    if (elements.entropyValue) {
+        elements.entropyValue.textContent = '- bits';
+    }
+    
+    if (elements.lengthValue) {
+        elements.lengthValue.textContent = '- chars';
+    }
+}
+
+function updatePasswordMetrics(password, score) {
+    // Update entropy display
+    if (elements.entropyValue) {
+        const entropy = calculateEntropy(password);
+        elements.entropyValue.textContent = `${entropy.toFixed(1)} bits`;
+        elements.entropyValue.style.animation = 'fadeIn 0.4s ease-out';
+    }
+    
+    // Update length display
+    if (elements.lengthValue) {
+        elements.lengthValue.textContent = `${password.length} chars`;
+        elements.lengthValue.style.animation = 'fadeIn 0.4s ease-out';
+    }
+}
+
+function calculateEntropy(password) {
+    let charsetSize = 0;
+    if (/[a-z]/.test(password)) charsetSize += 26;
+    if (/[A-Z]/.test(password)) charsetSize += 26;
+    if (/[0-9]/.test(password)) charsetSize += 10;
+    if (/[^a-zA-Z0-9]/.test(password)) charsetSize += 32;
+    
+    return Math.log2(Math.pow(charsetSize, password.length));
+}
+
+// ===== ENHANCED UI UPDATE FUNCTIONS =====
 function updateStrengthMeter(score, strengthClass, strength) {
     if (elements.strengthFill) {
         elements.strengthFill.style.width = score + '%';
@@ -867,6 +711,102 @@ function displayPasswordRecommendations(recommendations) {
     }
 }
 
+// ===== ENHANCED BREACH CHECKING =====
+async function checkPasswordStrengthAPI(password) {
+    try {
+        performanceMetrics.apiCallCount++;
+        
+        const response = await fetch('/api/check_password', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ password: password })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                updateBreachStatus(data.breached, data.count, data.security_level);
+                updateAdvancedMetrics(data);
+            }
+        } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('Password strength check failed:', error);
+        if (elements.breachStatus) {
+            elements.breachStatus.innerHTML = '<span style="color: var(--text-secondary);">⚠️ Unable to check breach status</span>';
+        }
+    }
+}
+
+function updateBreachStatus(isBreached, count, securityLevel) {
+    if (!elements.breachStatus) return;
+    
+    if (isBreached) {
+        let warningLevel = 'COMPROMISED';
+        let warningColor = '#ff4757';
+        
+        switch (securityLevel) {
+            case 'critical':
+                warningLevel = 'CRITICAL RISK';
+                warningColor = '#ff4757';
+                break;
+            case 'high_risk':
+                warningLevel = 'HIGH RISK';
+                warningColor = '#ff6348';
+                break;
+            case 'medium_risk':
+                warningLevel = 'MEDIUM RISK';
+                warningColor = '#ffa502';
+                break;
+            default:
+                warningLevel = 'COMPROMISED';
+                warningColor = '#ff4757';
+        }
+        
+        elements.breachStatus.innerHTML = `
+            <span class="breach-warning" style="color: ${warningColor}; animation: breachPulse 1.5s ease-in-out infinite; font-weight: 700;">
+                🚨 ${warningLevel}: Found in ${count.toLocaleString()} breaches!
+            </span>`;
+    } else {
+        let securityText = 'SECURE';
+        let securityColor = '#2ed573';
+        
+        switch (securityLevel) {
+            case 'fortress':
+                securityText = 'FORTRESS LEVEL';
+                securityColor = '#2ed573';
+                break;
+            case 'military':
+                securityText = 'MILITARY GRADE';
+                securityColor = '#58a6ff';
+                break;
+            case 'strong':
+                securityText = 'STRONG SECURITY';
+                securityColor = '#2ed573';
+                break;
+            default:
+                securityText = 'SECURE';
+                securityColor = '#2ed573';
+        }
+        
+        elements.breachStatus.innerHTML = `
+            <span class="breach-safe" style="color: ${securityColor}; font-weight: 700;">
+                ✅ ${securityText}: Not found in known breaches
+            </span>`;
+    }
+}
+
+function updateAdvancedMetrics(data) {
+    // Update additional metrics if available
+    if (data.entropy && elements.entropyValue) {
+        elements.entropyValue.textContent = `${data.entropy.toFixed(1)} bits`;
+    }
+}
+
 // ===== PASSWORD CONTROL FUNCTIONS =====
 function togglePasswordVisibility() {
     if (!elements.passwordInput || !elements.toggleVisibility) return;
@@ -906,7 +846,7 @@ function clearPasswordInput() {
         elements.passwordInput.value = '';
         analyzePassword('');
         elements.passwordInput.focus();
-        showNotification('Password cleared', 'info');
+        showNotification('Password cleared securely', 'info');
     }
 }
 
@@ -938,9 +878,1097 @@ function toggleAnalysis() {
     }
 }
 
+// ===== ENHANCED AUTHENTICATION =====
+function openAuthModal() {
+    if (elements.authModal) {
+        elements.authModal.classList.add('show');
+        elements.authModal.style.animation = 'modalFadeIn 0.3s ease-out';
+        setAuthMode(isLoginMode);
+        
+        // Focus on username field
+        setTimeout(() => {
+            if (elements.authUsername) {
+                elements.authUsername.focus();
+            }
+        }, 100);
+    }
+}
+
+function closeAuthModal() {
+    if (elements.authModal) {
+        elements.authModal.style.animation = 'modalFadeOut 0.3s ease-out';
+        setTimeout(() => {
+            elements.authModal.classList.remove('show');
+        }, 300);
+        
+        // Reset form
+        if (elements.authForm) {
+            elements.authForm.reset();
+        }
+        
+        // Clear any error states
+        clearAuthErrors();
+    }
+}
+
+function setAuthMode(loginMode) {
+    isLoginMode = loginMode;
+    
+    if (elements.authTitle && elements.authSubmit && elements.authSwitchText && elements.authSwitchLink) {
+        if (isLoginMode) {
+            elements.authTitle.textContent = '🔐 VaultGuard Secure Access';
+            elements.authSubmit.textContent = 'Secure Login';
+            elements.authSwitchText.textContent = "Don't have an account?";
+            elements.authSwitchLink.textContent = 'Create Account';
+            
+            // Hide optional fields for login
+            if (elements.authEmail) elements.authEmail.style.display = 'none';
+            if (elements.authPhone) elements.authPhone.style.display = 'none';
+        } else {
+            elements.authTitle.textContent = '🛡️ Create Secure Account';
+            elements.authSubmit.textContent = 'Create Account';
+            elements.authSwitchText.textContent = 'Already have an account?';
+            elements.authSwitchLink.textContent = 'Login';
+            
+            // Show optional fields for registration
+            if (elements.authEmail) elements.authEmail.style.display = 'block';
+            if (elements.authPhone) elements.authPhone.style.display = 'block';
+        }
+    }
+    
+    // Clear any previous errors
+    clearAuthErrors();
+}
+
+function clearAuthErrors() {
+    const errorElements = document.querySelectorAll('.auth-error');
+    errorElements.forEach(el => el.remove());
+    
+    // Reset input field styles
+    [elements.authUsername, elements.authEmail, elements.authPhone, elements.authPassword].forEach(input => {
+        if (input) {
+            input.style.borderColor = '';
+            input.classList.remove('error');
+        }
+    });
+}
+
+function showAuthError(message, targetElement = null) {
+    clearAuthErrors();
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'auth-error';
+    errorDiv.style.cssText = `
+        color: #ff4757;
+        background: rgba(255, 71, 87, 0.1);
+        border: 1px solid rgba(255, 71, 87, 0.3);
+        padding: 0.75rem;
+        border-radius: 6px;
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        animation: fadeIn 0.3s ease-out;
+    `;
+    errorDiv.textContent = message;
+    
+    if (targetElement && targetElement.parentNode) {
+        targetElement.parentNode.appendChild(errorDiv);
+        targetElement.style.borderColor = '#ff4757';
+        targetElement.classList.add('error');
+    } else if (elements.authForm) {
+        elements.authForm.appendChild(errorDiv);
+    }
+}
+
+async function handleAuth(event) {
+    event.preventDefault();
+    
+    const username = elements.authUsername?.value.trim();
+    const email = elements.authEmail?.value.trim();
+    const phone = elements.authPhone?.value.trim();
+    const password = elements.authPassword?.value;
+    
+    // Basic validation
+    if (!username || !password) {
+        showAuthError('Please fill in required fields');
+        return;
+    }
+    
+    // Registration-specific validation
+    if (!isLoginMode) {
+        if (username.length < 3) {
+            showAuthError('Username must be at least 3 characters long', elements.authUsername);
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+            showAuthError('Username can only contain letters, numbers, dots, hyphens, and underscores', elements.authUsername);
+            return;
+        }
+        
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showAuthError('Please enter a valid email address', elements.authEmail);
+            return;
+        }
+        
+        if (password.length < 12) {
+            showAuthError('Password must be at least 12 characters long for security', elements.authPassword);
+            return;
+        }
+        
+        const passwordValidation = validatePasswordComplexity(password);
+        if (!passwordValidation.isValid) {
+            showAuthError(passwordValidation.message, elements.authPassword);
+            return;
+        }
+    }
+    
+    const endpoint = isLoginMode ? '/api/login' : '/api/register';
+    const requestData = isLoginMode 
+        ? { username, password }
+        : { username, password, email: email || undefined, phone: phone || undefined };
+    
+    try {
+        // Update submit button state
+        updateAuthSubmitState(true);
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            currentUserSalt = data.salt;
+            masterPasswordCache = password;
+            securityScore = data.security_score || 0;
+            
+            // Handle new device notification
+            if (data.new_device) {
+                showNotification('New device detected! Check your notifications for security alert.', 'warning');
+            }
+            
+            showNotification(data.message, 'success');
+            closeAuthModal();
+            
+            // Smooth transition to authenticated state
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            showAuthError(data.message);
+        }
+    } catch (error) {
+        console.error('Auth error:', error);
+        showAuthError('Network error. Please check your connection and try again.');
+    } finally {
+        updateAuthSubmitState(false);
+    }
+}
+
+function validatePasswordComplexity(password) {
+    const requirements = [];
+    
+    if (!/[a-z]/.test(password)) requirements.push('lowercase letter');
+    if (!/[A-Z]/.test(password)) requirements.push('uppercase letter');
+    if (!/[0-9]/.test(password)) requirements.push('number');
+    if (!/[!@#$%^&*()_+-=\[\]{}|;:,.<>?]/.test(password)) requirements.push('special character');
+    
+    if (requirements.length > 0) {
+        return {
+            isValid: false,
+            message: `Password must contain: ${requirements.join(', ')}`
+        };
+    }
+    
+    return { isValid: true, message: '' };
+}
+
+function updateAuthSubmitState(isLoading) {
+    if (!elements.authSubmit) return;
+    
+    if (isLoading) {
+        elements.authSubmit.disabled = true;
+        elements.authSubmit.textContent = isLoginMode ? 'Authenticating...' : 'Creating Account...';
+        elements.authSubmit.style.opacity = '0.7';
+        elements.authSubmit.style.cursor = 'not-allowed';
+    } else {
+        elements.authSubmit.disabled = false;
+        elements.authSubmit.textContent = isLoginMode ? 'Secure Login' : 'Create Account';
+        elements.authSubmit.style.opacity = '1';
+        elements.authSubmit.style.cursor = 'pointer';
+    }
+}
+
+// ===== ENHANCED VAULT MANAGEMENT =====
+async function checkAuthenticationStatus() {
+    try {
+        const response = await fetch('/api/me', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.authenticated) {
+            currentUserSalt = data.salt;
+            securityScore = data.security_score || 0;
+            updateUIForAuthenticatedUser(data);
+        } else {
+            updateUIForUnauthenticatedUser();
+        }
+    } catch (error) {
+        console.error('Failed to check auth status:', error);
+        updateUIForUnauthenticatedUser();
+    }
+}
+
+function updateUIForAuthenticatedUser(userData) {
+    // Update security score display
+    if (elements.securityScoreValue) {
+        elements.securityScoreValue.textContent = userData.security_score || 0;
+        
+        // Update color based on score
+        const scoreElement = elements.securityScoreValue.parentElement;
+        if (scoreElement) {
+            scoreElement.className = 'security-score-badge';
+            if (userData.security_score >= 80) {
+                scoreElement.classList.add('excellent');
+            } else if (userData.security_score >= 60) {
+                scoreElement.classList.add('good');
+            } else if (userData.security_score >= 40) {
+                scoreElement.classList.add('fair');
+            } else {
+                scoreElement.classList.add('poor');
+            }
+        }
+    }
+    
+    // Show password age warning if needed
+    if (userData.password_age_warning) {
+        setTimeout(() => {
+            showNotification('Your master password is over 90 days old. Consider changing it for better security.', 'warning');
+        }, 3000);
+    }
+}
+
+function updateUIForUnauthenticatedUser() {
+    currentUserSalt = null;
+    masterPasswordCache = null;
+    securityScore = 0;
+}
+
+async function loadVaultData() {
+    try {
+        showLoadingState('vault');
+        
+        const response = await fetch('/api/vault', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                vaultData = data.vault_entries;
+                securityScore = data.security_score || securityScore;
+                updateVaultDisplay();
+                showNotification(`Loaded ${vaultData.length} encrypted passwords`, 'info');
+                
+                // Update security score
+                if (elements.securityScoreValue) {
+                    elements.securityScoreValue.textContent = securityScore;
+                }
+            }
+        } else {
+            throw new Error(`HTTP ${response.status}`);
+        }
+    } catch (error) {
+        console.error('Failed to load vault data:', error);
+        showNotification('Failed to load vault data', 'error');
+    } finally {
+        hideLoadingState('vault');
+    }
+}
+
+async function savePassword() {
+    const site = elements.siteName?.value.trim();
+    const username = elements.vaultUsername?.value.trim();
+    const password = elements.vaultPassword?.value;
+    const category = elements.vaultCategory?.value || 'General';
+    const notes = elements.vaultNotes?.value.trim();
+    
+    // Validation
+    if (!site || !username || !password) {
+        showNotification('Please fill in all required fields', 'error');
+        highlightEmptyFields([elements.siteName, elements.vaultUsername, elements.vaultPassword]);
+        return;
+    }
+    
+    if (site.length > 120) {
+        showNotification('Site name must be less than 120 characters', 'error');
+        return;
+    }
+    
+    if (username.length > 120) {
+        showNotification('Username must be less than 120 characters', 'error');
+        return;
+    }
+    
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        updateSaveButtonState(true);
+        
+        const response = await fetch('/api/vault', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                site: site,
+                username: username,
+                password: password,
+                category: category,
+                notes: notes,
+                master_password: masterPassword
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Clear form
+            elements.siteName.value = '';
+            elements.vaultUsername.value = '';
+            elements.vaultPassword.value = '';
+            elements.vaultNotes.value = '';
+            elements.vaultCategory.value = 'General';
+            
+            // Show breach warning if needed
+            if (data.breach_warning) {
+                showNotification(`⚠️ Password saved but found in ${data.breach_count?.toLocaleString()} breaches! Consider changing it.`, 'warning');
+            } else {
+                showNotification(data.message, 'success');
+            }
+            
+            // Reload vault data
+            await loadVaultData();
+            
+            // Focus back to site field for next entry
+            elements.siteName.focus();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save password:', error);
+        showNotification('Failed to save password. Please try again.', 'error');
+    } finally {
+        updateSaveButtonState(false);
+    }
+}
+
+function highlightEmptyFields(fields) {
+    fields.forEach(field => {
+        if (field && !field.value.trim()) {
+            field.style.borderColor = '#ff4757';
+            field.style.animation = 'shake 0.5s ease-in-out';
+            
+            setTimeout(() => {
+                field.style.borderColor = '';
+                field.style.animation = '';
+            }, 2000);
+        }
+    });
+}
+
+function updateSaveButtonState(isLoading) {
+    if (!elements.savePasswordBtn) return;
+    
+    if (isLoading) {
+        elements.savePasswordBtn.disabled = true;
+        elements.savePasswordBtn.textContent = 'Encrypting & Saving...';
+        elements.savePasswordBtn.style.opacity = '0.7';
+    } else {
+        elements.savePasswordBtn.disabled = false;
+        elements.savePasswordBtn.textContent = '💾 Encrypt & Store Securely';
+        elements.savePasswordBtn.style.opacity = '1';
+    }
+}
+
+async function getMasterPassword() {
+    if (masterPasswordCache) {
+        return masterPasswordCache;
+    }
+    
+    const password = prompt('🔐 Enter your master password to access secure vault:');
+    if (!password) {
+        showNotification('Master password required for vault access', 'warning');
+        return null;
+    }
+    
+    // Cache password for 5 minutes
+    masterPasswordCache = password;
+    setTimeout(() => { 
+        masterPasswordCache = null;
+        showNotification('Master password session expired for security', 'info');
+    }, 5 * 60 * 1000);
+    
+    return password;
+}
+
+// ===== ENHANCED VAULT DISPLAY =====
+function updateVaultDisplay() {
+    if (!elements.vaultList) return;
+    
+    let filteredData = vaultData;
+    
+    // Apply filter
+    if (vaultFilter) {
+        filteredData = vaultData.filter(item => 
+            item.site.toLowerCase().includes(vaultFilter) ||
+            item.username.toLowerCase().includes(vaultFilter) ||
+            item.category.toLowerCase().includes(vaultFilter) ||
+            (item.notes && item.notes.toLowerCase().includes(vaultFilter))
+        );
+    }
+    
+    // Apply sorting
+    filteredData.sort((a, b) => {
+        switch (vaultSortBy) {
+            case 'site':
+                return a.site.localeCompare(b.site);
+            case 'username':
+                return a.username.localeCompare(b.username);
+            case 'category':
+                return a.category.localeCompare(b.category);
+            case 'created_at':
+                return new Date(b.created_at) - new Date(a.created_at);
+            case 'access_count':
+                return (b.access_count || 0) - (a.access_count || 0);
+            case 'updated_at':
+            default:
+                return new Date(b.updated_at) - new Date(a.updated_at);
+        }
+    });
+    
+    if (filteredData.length === 0) {
+        displayEmptyVault();
+        return;
+    }
+    
+    // Display vault statistics
+    displayVaultStats(filteredData.length);
+    
+    // Display vault entries
+    elements.vaultList.innerHTML = filteredData.map((item, index) => {
+        const strengthClass = getStrengthClass(item.strength_score);
+        const compromisedStatus = item.is_compromised ? '🚨 Compromised' : '';
+        const lastAccessed = item.last_accessed ? formatTimestamp(item.last_accessed) : 'Never';
+        
+        return `
+            <li class="vault-item ${item.is_compromised ? 'compromised' : ''}" style="animation: fadeInUp 0.4s ease-out ${index * 0.05}s backwards;">
+                <div class="vault-info">
+                    <div class="site-header">
+                        <h4 class="site-name">${escapeHtml(item.site)}</h4>
+                        <div class="vault-meta">
+                            <span class="category-badge">${escapeHtml(item.category)}</span>
+                            <span class="created-date">Added: ${formatTimestamp(item.created_at)}</span>
+                            ${item.updated_at !== item.created_at ? `<span class="updated-badge">Updated</span>` : ''}
+                        </div>
+                    </div>
+                    <p class="username-display">👤 ${escapeHtml(item.username)}</p>
+                    <div class="password-preview">🔐 Password: ••••••••••• (AES-256 Encrypted)</div>
+                    
+                    <div class="security-indicators">
+                        <span class="strength-indicator ${strengthClass}">
+                            Strength: ${item.strength_score || 0}%
+                        </span>
+                        ${item.is_compromised ? '<span class="compromised-indicator">⚠️ Compromised</span>' : ''}
+                    </div>
+                    
+                    ${item.notes ? `<div class="password-notes">📝 ${escapeHtml(item.notes)}</div>` : ''}
+                    
+                    <div class="access-info">
+                        <span class="access-count">Accessed: ${item.access_count || 0} times</span>
+                        <span class="last-accessed">Last: ${lastAccessed}</span>
+                    </div>
+                    
+                    ${item.updated_at !== item.created_at ? `<div class="updated-date">Last updated: ${formatTimestamp(item.updated_at)}</div>` : ''}
+                </div>
+                <div class="vault-actions">
+                    <button id="copy-btn-${item.id}" class="vault-btn copy-btn" onclick="copyVaultPassword(${item.id})" title="Secure copy">
+                        📋 <span>Copy</span>
+                    </button>
+                    <button id="view-btn-${item.id}" class="vault-btn view-btn" onclick="viewVaultPassword(${item.id})" title="Decrypt & view">
+                        👁️ <span>View</span>
+                    </button>
+                    <button id="edit-btn-${item.id}" class="vault-btn edit-btn" onclick="editVaultPassword(${item.id})" title="Edit entry">
+                        ✏️ <span>Edit</span>
+                    </button>
+                    <button id="delete-btn-${item.id}" class="vault-btn delete-btn" onclick="deleteVaultPassword(${item.id})" title="Secure delete">
+                        🗑️ <span>Delete</span>
+                    </button>
+                </div>
+            </li>
+        `;
+    }).join('');
+}
+
+function getStrengthClass(score) {
+    if (score >= 80) return 'excellent';
+    if (score >= 60) return 'good';
+    if (score >= 40) return 'fair';
+    return 'poor';
+}
+
+function displayEmptyVault() {
+    if (vaultFilter) {
+        elements.vaultList.innerHTML = `
+            <li class="empty-vault">
+                <div class="empty-vault-content">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+                    <h3>No Results Found</h3>
+                    <p>No passwords match your search for "${vaultFilter}"</p>
+                    <button onclick="clearVaultFilter()" class="clear-filter-btn">Clear Filter</button>
+                </div>
+            </li>`;
+    } else {
+        elements.vaultList.innerHTML = `
+            <li class="empty-vault">
+                <div class="empty-vault-content">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🔐</div>
+                    <h3>Your Secure Vault is Empty</h3>
+                    <p>Add your first password to experience military-grade encryption!</p>
+                    <div class="security-reminder">
+                        <strong>Enhanced Features:</strong> Smart notifications, breach detection, security audit, and more!
+                    </div>
+                    <div class="security-features">
+                        <div class="feature">🛡️ AES-256 + PBKDF2</div>
+                        <div class="feature">🔍 Real-time Breach Check</div>
+                        <div class="feature">📧 Smart Notifications</div>
+                        <div class="feature">📊 Security Dashboard</div>
+                        <div class="feature">🔑 Password Recovery</div>
+                        <div class="feature">🚫 Zero-Knowledge</div>
+                    </div>
+                </div>
+            </li>`;
+    }
+}
+
+function displayVaultStats(visibleCount) {
+    // Remove existing stats
+    const existingStats = document.querySelector('.vault-stats');
+    if (existingStats) {
+        existingStats.remove();
+    }
+    
+    const compromisedCount = vaultData.filter(item => item.is_compromised).length;
+    const weakCount = vaultData.filter(item => (item.strength_score || 0) < 50).length;
+    const strongCount = vaultData.filter(item => (item.strength_score || 0) >= 80).length;
+    
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'vault-stats';
+    statsDiv.innerHTML = `
+        <div class="stats-grid">
+            <div class="stat-item">
+                <span class="stat-value">${visibleCount}</span>
+                <span class="stat-label">${vaultFilter ? 'Filtered' : 'Total'} Passwords</span>
+            </div>
+            <div class="stat-item ${strongCount > 0 ? 'good' : ''}">
+                <span class="stat-value">${strongCount}</span>
+                <span class="stat-label">Strong (80%+)</span>
+            </div>
+            <div class="stat-item ${compromisedCount > 0 ? 'critical' : 'good'}">
+                <span class="stat-value">${compromisedCount}</span>
+                <span class="stat-label">Compromised</span>
+            </div>
+            <div class="stat-item ${weakCount > 0 ? 'warning' : 'good'}">
+                <span class="stat-value">${weakCount}</span>
+                <span class="stat-label">Weak (<50%)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">${50 - vaultData.length}</span>
+                <span class="stat-label">Remaining Slots</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">${securityScore}%</span>
+                <span class="stat-label">Security Score</span>
+            </div>
+        </div>
+    `;
+    
+    if (elements.vaultList && elements.vaultList.parentNode) {
+        elements.vaultList.parentNode.insertBefore(statsDiv, elements.vaultList);
+    }
+}
+
+function filterVaultEntries(searchTerm) {
+    vaultFilter = searchTerm.toLowerCase();
+    updateVaultDisplay();
+}
+
+function sortVaultEntries(sortBy) {
+    vaultSortBy = sortBy;
+    updateVaultDisplay();
+}
+
+function clearVaultFilter() {
+    vaultFilter = '';
+    if (elements.vaultSearch) {
+        elements.vaultSearch.value = '';
+    }
+    if (elements.clearSearch) {
+        elements.clearSearch.style.display = 'none';
+    }
+    updateVaultDisplay();
+}
+
+// ===== VAULT OPERATIONS =====
+async function copyVaultPassword(id) {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showButtonLoading(`copy-btn-${id}`, 'Copying...');
+        
+        const response = await fetch(`/api/vault/${id}/password`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await navigator.clipboard.writeText(data.password);
+            showNotification('Password securely copied to clipboard!', 'success');
+            
+            // Security: Clear clipboard after 30 seconds
+            setTimeout(() => {
+                navigator.clipboard.writeText('').catch(() => {});
+            }, 30000);
+            
+            // Update access count
+            await loadVaultData();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to copy password:', error);
+        showNotification('Failed to copy password', 'error');
+    } finally {
+        hideButtonLoading(`copy-btn-${id}`, '📋 Copy');
+    }
+}
+
+async function viewVaultPassword(id) {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showButtonLoading(`view-btn-${id}`, 'Decrypting...');
+        
+        const response = await fetch(`/api/vault/${id}/password`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const item = vaultData.find(item => item.id === id);
+            displayPasswordModal(item, data.password);
+            
+            // Update access count
+            await loadVaultData();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to view password:', error);
+        showNotification('Failed to decrypt password', 'error');
+    } finally {
+        hideButtonLoading(`view-btn-${id}`, '👁️ View');
+    }
+}
+
+function editVaultPassword(id) {
+    const item = vaultData.find(item => item.id === id);
+    if (!item) return;
+    
+    // Populate the form with existing data
+    elements.siteName.value = item.site;
+    elements.vaultUsername.value = item.username;
+    elements.vaultCategory.value = item.category || 'General';
+    elements.vaultNotes.value = item.notes || '';
+    
+    // Focus on password field for editing
+    elements.vaultPassword.focus();
+    elements.vaultPassword.placeholder = 'Enter new password (leave empty to keep current)';
+    
+    showNotification('Edit mode: Update the fields and save to modify this entry', 'info');
+    
+    // Scroll to form
+    elements.siteName.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deleteVaultPassword(id) {
+    const item = vaultData.find(item => item.id === id);
+    if (!item) return;
+    
+    if (!confirm(`⚠️ Permanently delete password for "${item.site}"?\n\nThis action cannot be undone and will remove the encrypted data.`)) {
+        return;
+    }
+    
+    try {
+        showButtonLoading(`delete-btn-${id}`, 'Deleting...');
+        
+        const response = await fetch(`/api/vault/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await loadVaultData();
+            showNotification('Password securely deleted', 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to delete password:', error);
+        showNotification('Failed to delete password', 'error');
+    } finally {
+        hideButtonLoading(`delete-btn-${id}`, '🗑️ Delete');
+    }
+}
+
+// ===== SECURITY DASHBOARD =====
+async function toggleSecurityDashboard() {
+    if (!elements.securityDashboard) return;
+    
+    if (elements.securityDashboard.style.display === 'none' || !elements.securityDashboard.style.display) {
+        await loadSecurityDashboard();
+    } else {
+        elements.securityDashboard.style.display = 'none';
+    }
+}
+
+async function loadSecurityDashboard() {
+    try {
+        const response = await fetch('/api/security/dashboard', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            dashboardData = data.dashboard;
+            updateDashboardDisplay(dashboardData);
+            elements.securityDashboard.style.display = 'block';
+        } else {
+            showNotification('Failed to load security dashboard', 'error');
+        }
+    } catch (error) {
+        console.error('Dashboard error:', error);
+        showNotification('Network error loading dashboard', 'error');
+    }
+}
+
+function updateDashboardDisplay(dashboard) {
+    // Update metrics
+    const metrics = {
+        securityScoreMetric: dashboard.security_score,
+        totalPasswordsMetric: dashboard.total_passwords,
+        compromisedMetric: dashboard.compromised_passwords,
+        weakMetric: dashboard.weak_passwords
+    };
+    
+    Object.entries(metrics).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            element.style.animation = 'fadeIn 0.5s ease-out';
+        }
+    });
+    
+    // Update security trend
+    const trendElement = document.getElementById('securityTrend');
+    if (trendElement) {
+        if (dashboard.security_score >= 80) {
+            trendElement.textContent = '✅ Excellent';
+            trendElement.className = 'metric-trend excellent';
+        } else if (dashboard.security_score >= 60) {
+            trendElement.textContent = '👍 Good';
+            trendElement.className = 'metric-trend good';
+        } else if (dashboard.security_score >= 40) {
+            trendElement.textContent = '⚠️ Fair';
+            trendElement.className = 'metric-trend warning';
+        } else {
+            trendElement.textContent = '❌ Poor';
+            trendElement.className = 'metric-trend critical';
+        }
+    }
+    
+    // Update recent activity
+    const activityList = document.getElementById('recentActivityList');
+    if (activityList && dashboard.recent_events) {
+        if (dashboard.recent_events.length > 0) {
+            activityList.innerHTML = dashboard.recent_events.map(event => `
+                <div class="activity-item ${event.severity.toLowerCase()}">
+                    <div class="activity-icon">${getEventIcon(event.type)}</div>
+                    <div class="activity-details">
+                        <div class="activity-description">${escapeHtml(event.description)}</div>
+                        <div class="activity-timestamp">${formatTimestamp(event.timestamp)}</div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            activityList.innerHTML = '<div class="no-activity">No recent security events</div>';
+        }
+    }
+}
+
+function getEventIcon(eventType) {
+    const icons = {
+        'LOGIN_SUCCESS': '🔐',
+        'LOGIN_FAILED': '❌',
+        'PASSWORD_ADDED': '💾',
+        'PASSWORD_ACCESSED': '👁️',
+        'PASSWORD_UPDATED': '✏️',
+        'PASSWORD_DELETED': '🗑️',
+        'SECURITY_AUDIT': '🔍',
+        'ACCOUNT_LOCKED': '🔒',
+        'SETTINGS_UPDATED': '⚙️',
+        'VAULT_EXPORTED': '📤',
+        'DEVICE_TRUSTED': '📱'
+    };
+    return icons[eventType] || '📝';
+}
+
+// ===== ENHANCED FEATURES =====
+async function runSecurityAudit() {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showNotification('Running comprehensive security audit...', 'info');
+        
+        const response = await fetch('/api/vault/security-audit', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayAuditResults(data.audit_results);
+            showNotification('Security audit completed successfully', 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Audit error:', error);
+        showNotification('Network error during audit', 'error');
+    }
+}
+
+function displayAuditResults(results) {
+    // Create audit results modal
+    const modal = document.createElement('div');
+    modal.className = 'audit-results-modal';
+    modal.innerHTML = `
+        <div class="audit-card">
+            <div class="audit-header">
+                <h2>🔍 Security Audit Results</h2>
+                <button class="close-audit" onclick="this.closest('.audit-results-modal').remove()">×</button>
+            </div>
+            <div class="audit-content">
+                <div class="audit-overview">
+                    <h3>Audit Overview</h3>
+                    <div class="audit-stats">
+                        <div class="audit-stat">
+                            <span class="stat-number">${results.total_passwords}</span>
+                            <span class="stat-label">Total Passwords</span>
+                        </div>
+                        <div class="audit-stat ${results.compromised_count > 0 ? 'critical' : 'good'}">
+                            <span class="stat-number">${results.compromised_count}</span>
+                            <span class="stat-label">Compromised</span>
+                        </div>
+                        <div class="audit-stat ${results.weak_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.weak_count}</span>
+                            <span class="stat-label">Weak</span>
+                        </div>
+                        <div class="audit-stat ${results.duplicate_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.duplicate_count}</span>
+                            <span class="stat-label">Duplicates</span>
+                        </div>
+                        <div class="audit-stat ${results.old_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.old_count}</span>
+                            <span class="stat-label">Old (90+ days)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                ${results.compromised_count > 0 ? `
+                <div class="audit-section critical">
+                    <h4>🚨 Compromised Passwords (Immediate Action Required)</h4>
+                    <div class="compromised-list">
+                        ${results.compromised_sites.map(site => `
+                            <div class="compromised-item">
+                                <span class="site-name">${escapeHtml(site.site)}</span>
+                                <span class="username">${escapeHtml(site.username)}</span>
+                                <span class="breach-count">${site.breach_count.toLocaleString()} breaches</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${results.weak_count > 0 ? `
+                <div class="audit-section warning">
+                    <h4>⚠️ Weak Passwords</h4>
+                    <div class="weak-list">
+                        ${results.weak_sites.map(site => `
+                            <div class="weak-item">
+                                <span class="site-name">${escapeHtml(site.site)}</span>
+                                <span class="username">${escapeHtml(site.username)}</span>
+                                <span class="strength-score">${site.strength_score}% strength</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="audit-actions">
+                    <button onclick="this.closest('.audit-results-modal').remove()" class="audit-action-btn">Close Report</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+async function exportVaultData() {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showNotification('Preparing secure vault export...', 'info');
+        
+        const response = await fetch('/api/vault/export', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword, format: 'json' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Create and download file
+            const blob = new Blob([JSON.stringify(data.data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `vaultguard-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification(`Exported ${data.exported_count} passwords successfully`, 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Export error:', error);
+        showNotification('Network error during export', 'error');
+    }
+}
+
+// ===== ENHANCED HELPER FUNCTIONS =====
+function formatTimestamp(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffHours < 1) {
+        return 'Just now';
+    } else if (diffHours < 24) {
+        return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays < 7) {
+        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } else {
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+}
+
+function showButtonLoading(buttonId, loadingText) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+        button.disabled = true;
+        button.textContent = loadingText;
+        button.style.opacity = '0.7';
+    }
+}
+
+function hideButtonLoading(buttonId, originalText) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+        button.style.opacity = '1';
+    }
+}
+
+function showLoadingState(component) {
+    const loadingElement = document.getElementById(`${component}-loading`);
+    if (loadingElement) {
+        loadingElement.style.display = 'block';
+    }
+}
+
+function hideLoadingState(component) {
+    const loadingElement = document.getElementById(`${component}-loading`);
+    if (loadingElement) {
+        loadingElement.style.display = 'none';
+    }
+}
+
 // ===== PASSWORD GENERATOR FUNCTIONS =====
 function updateLengthDisplay(length) {
-    if (!elements.lengthValue) return;
+    if (!elements.lengthValueDisplay) return;
     
     passwordGeneratorSettings.length = length;
     
@@ -962,8 +1990,8 @@ function updateLengthDisplay(length) {
         label = '(Good)';
     }
     
-    elements.lengthValue.style.color = color;
-    elements.lengthValue.textContent = `${length} ${label}`;
+    elements.lengthValueDisplay.style.color = color;
+    elements.lengthValueDisplay.textContent = `${length} ${label}`;
 }
 
 function generateNewPassword() {
@@ -1016,7 +2044,7 @@ function useGeneratedPassword() {
     showNotification('Password moved to analyzer!', 'success');
     
     // Scroll to analyzer if it exists
-    const analyzerSection = document.getElementById('analyzer-section');
+    const analyzerSection = document.querySelector('.password-analyzer');
     if (analyzerSection) {
         analyzerSection.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1113,793 +2141,17 @@ function shuffleString(str) {
     return array.join('');
 }
 
-// ===== AUTHENTICATION FUNCTIONS =====
-function openAuthModal() {
-    if (elements.authModal) {
-        elements.authModal.classList.add('show');
-        elements.authModal.style.animation = 'modalFadeIn 0.3s ease-out';
-        setAuthMode(isLoginMode);
-        
-        // Focus on username field
+function initializePasswordGenerator() {
+    // Auto-generate initial password if on generator page
+    if (elements.generateBtn && elements.generatedPassword) {
         setTimeout(() => {
-            if (elements.authUsername) {
-                elements.authUsername.focus();
-            }
-        }, 100);
-    }
-}
-
-function closeAuthModal() {
-    if (elements.authModal) {
-        elements.authModal.style.animation = 'modalFadeOut 0.3s ease-out';
-        setTimeout(() => {
-            elements.authModal.classList.remove('show');
-        }, 300);
-        
-        // Reset form
-        if (elements.authForm) {
-            elements.authForm.reset();
-        }
-        
-        // Clear any error states
-        clearAuthErrors();
-    }
-}
-
-function setAuthMode(loginMode) {
-    isLoginMode = loginMode;
-    
-    if (elements.authTitle && elements.authSubmit && elements.authSwitchText && elements.authSwitchLink) {
-        if (isLoginMode) {
-            elements.authTitle.textContent = '🔐 VaultGuard Secure Access';
-            elements.authSubmit.textContent = 'Secure Login';
-            elements.authSwitchText.textContent = "Don't have an account?";
-            elements.authSwitchLink.textContent = 'Create Account';
-        } else {
-            elements.authTitle.textContent = '🛡️ Create Secure Account';
-            elements.authSubmit.textContent = 'Create Account';
-            elements.authSwitchText.textContent = 'Already have an account?';
-            elements.authSwitchLink.textContent = 'Login';
-        }
+            generateNewPassword();
+        }, 500);
     }
     
-    // Clear any previous errors
-    clearAuthErrors();
-}
-
-function clearAuthErrors() {
-    const errorElements = document.querySelectorAll('.auth-error');
-    errorElements.forEach(el => el.remove());
-    
-    // Reset input field styles
-    [elements.authUsername, elements.authPassword].forEach(input => {
-        if (input) {
-            input.style.borderColor = '';
-            input.classList.remove('error');
-        }
-    });
-}
-
-function showAuthError(message, targetElement = null) {
-    clearAuthErrors();
-    
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'auth-error';
-    errorDiv.style.cssText = `
-        color: #ff4757;
-        background: rgba(255, 71, 87, 0.1);
-        border: 1px solid rgba(255, 71, 87, 0.3);
-        padding: 0.75rem;
-        border-radius: 6px;
-        margin-top: 0.5rem;
-        font-size: 0.9rem;
-        animation: fadeIn 0.3s ease-out;
-    `;
-    errorDiv.textContent = message;
-    
-    if (targetElement && targetElement.parentNode) {
-        targetElement.parentNode.appendChild(errorDiv);
-        targetElement.style.borderColor = '#ff4757';
-        targetElement.classList.add('error');
-    } else if (elements.authForm) {
-        elements.authForm.appendChild(errorDiv);
-    }
-}
-
-async function handleAuth(event) {
-    event.preventDefault();
-    
-    const username = elements.authUsername?.value.trim();
-    const password = elements.authPassword?.value;
-    
-    // Basic validation
-    if (!username || !password) {
-        showAuthError('Please fill in all fields');
-        return;
-    }
-    
-    // Registration-specific validation
-    if (!isLoginMode) {
-        if (username.length < 3) {
-            showAuthError('Username must be at least 3 characters long', elements.authUsername);
-            return;
-        }
-        
-        if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
-            showAuthError('Username can only contain letters, numbers, dots, hyphens, and underscores', elements.authUsername);
-            return;
-        }
-        
-        if (password.length < 12) {
-            showAuthError('Password must be at least 12 characters long for security', elements.authPassword);
-            return;
-        }
-        
-        const passwordValidation = validatePasswordComplexity(password);
-        if (!passwordValidation.isValid) {
-            showAuthError(passwordValidation.message, elements.authPassword);
-            return;
-        }
-    }
-    
-    const endpoint = isLoginMode ? '/api/login' : '/api/register';
-    
-    try {
-        // Update submit button state
-        updateAuthSubmitState(true);
-        
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ username, password })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            currentUserSalt = data.salt;
-            masterPasswordCache = password;
-            showNotification(data.message, 'success');
-            closeAuthModal();
-            
-            // Smooth transition to authenticated state
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
-        } else {
-            showAuthError(data.message);
-        }
-    } catch (error) {
-        console.error('Auth error:', error);
-        showAuthError('Network error. Please check your connection and try again.');
-    } finally {
-        updateAuthSubmitState(false);
-    }
-}
-
-function validatePasswordComplexity(password) {
-    const requirements = [];
-    
-    if (!/[a-z]/.test(password)) requirements.push('lowercase letter');
-    if (!/[A-Z]/.test(password)) requirements.push('uppercase letter');
-    if (!/[0-9]/.test(password)) requirements.push('number');
-    if (!/[!@#$%^&*()_+-=\[\]{}|;:,.<>?]/.test(password)) requirements.push('special character');
-    
-    if (requirements.length > 0) {
-        return {
-            isValid: false,
-            message: `Password must contain: ${requirements.join(', ')}`
-        };
-    }
-    
-    return { isValid: true, message: '' };
-}
-
-function updateAuthSubmitState(isLoading) {
-    if (!elements.authSubmit) return;
-    
-    if (isLoading) {
-        elements.authSubmit.disabled = true;
-        elements.authSubmit.textContent = isLoginMode ? 'Authenticating...' : 'Creating Account...';
-        elements.authSubmit.style.opacity = '0.7';
-        elements.authSubmit.style.cursor = 'not-allowed';
-    } else {
-        elements.authSubmit.disabled = false;
-        elements.authSubmit.textContent = isLoginMode ? 'Secure Login' : 'Create Account';
-        elements.authSubmit.style.opacity = '1';
-        elements.authSubmit.style.cursor = 'pointer';
-    }
-}
-
-// ===== VAULT MANAGEMENT FUNCTIONS =====
-async function checkAuthenticationStatus() {
-    try {
-        const response = await fetch('/api/me', {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success && data.authenticated) {
-            currentUserSalt = data.salt;
-            updateUIForAuthenticatedUser(data);
-        } else {
-            updateUIForUnauthenticatedUser();
-        }
-    } catch (error) {
-        console.error('Failed to check auth status:', error);
-        updateUIForUnauthenticatedUser();
-    }
-}
-
-function updateUIForAuthenticatedUser(userData) {
-    // Update any authenticated user UI elements
-    const usernameElements = document.querySelectorAll('.current-username');
-    usernameElements.forEach(el => {
-        el.textContent = userData.username;
-    });
-    
-    const vaultCountElements = document.querySelectorAll('.vault-count');
-    vaultCountElements.forEach(el => {
-        el.textContent = userData.vault_count || 0;
-    });
-}
-
-function updateUIForUnauthenticatedUser() {
-    // Update UI for unauthenticated state
-    currentUserSalt = null;
-    masterPasswordCache = null;
-}
-
-async function loadVaultData() {
-    try {
-        showLoadingState('vault');
-        
-        const response = await fetch('/api/vault', {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-                vaultData = data.vault_entries;
-                updateVaultDisplay();
-                showNotification(`Loaded ${vaultData.length} encrypted passwords`, 'info');
-            }
-        } else {
-            throw new Error(`HTTP ${response.status}`);
-        }
-    } catch (error) {
-        console.error('Failed to load vault data:', error);
-        showNotification('Failed to load vault data', 'error');
-    } finally {
-        hideLoadingState('vault');
-    }
-}
-
-function showLoadingState(component) {
-    const loadingElement = document.getElementById(`${component}-loading`);
-    if (loadingElement) {
-        loadingElement.style.display = 'block';
-    }
-}
-
-function hideLoadingState(component) {
-    const loadingElement = document.getElementById(`${component}-loading`);
-    if (loadingElement) {
-        loadingElement.style.display = 'none';
-    }
-}
-
-async function savePassword() {
-    const site = elements.siteName?.value.trim();
-    const username = elements.vaultUsername?.value.trim();
-    const password = elements.vaultPassword?.value;
-    const category = elements.vaultCategory?.value || 'General';
-    const notes = elements.vaultNotes?.value.trim();
-    
-    // Validation
-    if (!site || !username || !password) {
-        showNotification('Please fill in all required fields', 'error');
-        highlightEmptyFields([elements.siteName, elements.vaultUsername, elements.vaultPassword]);
-        return;
-    }
-    
-    if (site.length > 120) {
-        showNotification('Site name must be less than 120 characters', 'error');
-        return;
-    }
-    
-    if (username.length > 120) {
-        showNotification('Username must be less than 120 characters', 'error');
-        return;
-    }
-    
-    const masterPassword = await getMasterPassword();
-    if (!masterPassword) return;
-    
-    try {
-        updateSaveButtonState(true);
-        
-        const response = await fetch('/api/vault', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({
-                site: site,
-                username: username,
-                password: password,
-                master_password: masterPassword,
-                category: category,
-                notes: notes
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Clear form
-            elements.siteName.value = '';
-            elements.vaultUsername.value = '';
-            elements.vaultPassword.value = '';
-            if (elements.vaultCategory) elements.vaultCategory.value = 'General';
-            if (elements.vaultNotes) elements.vaultNotes.value = '';
-            
-            // Reload vault data and dashboard
-            await loadVaultData();
-            if (loadSecurityDashboard) await loadSecurityDashboard();
-            showNotification(data.message, 'success');
-            
-            // Focus back to site field for next entry
-            elements.siteName.focus();
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to save password:', error);
-        showNotification('Failed to save password. Please try again.', 'error');
-    } finally {
-        updateSaveButtonState(false);
-    }
-}
-
-function highlightEmptyFields(fields) {
-    fields.forEach(field => {
-        if (field && !field.value.trim()) {
-            field.style.borderColor = '#ff4757';
-            field.style.animation = 'shake 0.5s ease-in-out';
-            
-            setTimeout(() => {
-                field.style.borderColor = '';
-                field.style.animation = '';
-            }, 2000);
-        }
-    });
-}
-
-function updateSaveButtonState(isLoading) {
-    if (!elements.savePasswordBtn) return;
-    
-    if (isLoading) {
-        elements.savePasswordBtn.disabled = true;
-        elements.savePasswordBtn.textContent = 'Encrypting & Saving...';
-        elements.savePasswordBtn.style.opacity = '0.7';
-    } else {
-        elements.savePasswordBtn.disabled = false;
-        elements.savePasswordBtn.textContent = '💾 Encrypt & Store Securely';
-        elements.savePasswordBtn.style.opacity = '1';
-    }
-}
-
-async function getMasterPassword() {
-    if (masterPasswordCache) {
-        return masterPasswordCache;
-    }
-    
-    const password = prompt('🔐 Enter your master password to access secure vault:');
-    if (!password) {
-        showNotification('Master password required for vault access', 'warning');
-        return null;
-    }
-    
-    // Cache password for 5 minutes
-    masterPasswordCache = password;
-    setTimeout(() => { 
-        masterPasswordCache = null;
-        showNotification('Master password session expired for security', 'info');
-    }, 5 * 60 * 1000);
-    
-    return password;
-}
-
-async function copyVaultPassword(id) {
-    const masterPassword = await getMasterPassword();
-    if (!masterPassword) return;
-    
-    try {
-        showButtonLoading(`copy-btn-${id}`, 'Copying...');
-        
-        const response = await fetch(`/api/vault/${id}/password`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ master_password: masterPassword })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            await navigator.clipboard.writeText(data.password);
-            showNotification('Password securely copied to clipboard!', 'success');
-            
-            // Security: Clear clipboard after 30 seconds
-            setTimeout(() => {
-                navigator.clipboard.writeText('').catch(() => {});
-            }, 30000);
-            
-            // Update access count
-            await loadVaultData();
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to copy password:', error);
-        showNotification('Failed to copy password', 'error');
-    } finally {
-        hideButtonLoading(`copy-btn-${id}`, '📋 Copy');
-    }
-}
-
-async function viewVaultPassword(id) {
-    const masterPassword = await getMasterPassword();
-    if (!masterPassword) return;
-    
-    try {
-        showButtonLoading(`view-btn-${id}`, 'Decrypting...');
-        
-        const response = await fetch(`/api/vault/${id}/password`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ master_password: masterPassword })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            const item = vaultData.find(item => item.id === id);
-            displayPasswordModal(item, data.password);
-            
-            // Update access count
-            await loadVaultData();
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to view password:', error);
-        showNotification('Failed to decrypt password', 'error');
-    } finally {
-        hideButtonLoading(`view-btn-${id}`, '👁️ View');
-    }
-}
-
-async function deleteVaultPassword(id) {
-    const item = vaultData.find(item => item.id === id);
-    
-    if (!confirm(`⚠️ Permanently delete password for "${item.site}"?\n\nThis action cannot be undone and will remove the encrypted data.`)) {
-        return;
-    }
-    
-    try {
-        showButtonLoading(`delete-btn-${id}`, 'Deleting...');
-        
-        const response = await fetch(`/api/vault/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            await loadVaultData();
-            if (loadSecurityDashboard) await loadSecurityDashboard();
-            showNotification('Password securely deleted', 'success');
-        } else {
-            showNotification(data.message, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to delete password:', error);
-        showNotification('Failed to delete password', 'error');
-    } finally {
-        hideButtonLoading(`delete-btn-${id}`, '🗑️ Delete');
-    }
-}
-
-function showButtonLoading(buttonId, loadingText) {
-    const button = document.getElementById(buttonId);
-    if (button) {
-        button.disabled = true;
-        button.textContent = loadingText;
-        button.style.opacity = '0.7';
-    }
-}
-
-function hideButtonLoading(buttonId, originalText) {
-    const button = document.getElementById(buttonId);
-    if (button) {
-        button.disabled = false;
-        button.textContent = originalText;
-        button.style.opacity = '1';
-    }
-}
-
-function filterVaultEntries(searchTerm) {
-    vaultFilter = searchTerm.toLowerCase();
-    
-    if (elements.clearSearch) {
-        elements.clearSearch.style.display = searchTerm ? 'block' : 'none';
-    }
-    
-    updateVaultDisplay();
-}
-
-function sortVaultEntries(sortBy) {
-    vaultSortBy = sortBy;
-    updateVaultDisplay();
-}
-
-function updateVaultDisplay() {
-    if (!elements.vaultList) return;
-    
-    let filteredData = vaultData;
-    
-    // Apply filter
-    if (vaultFilter) {
-        filteredData = vaultData.filter(item => 
-            item.site.toLowerCase().includes(vaultFilter) ||
-            item.username.toLowerCase().includes(vaultFilter) ||
-            (item.category && item.category.toLowerCase().includes(vaultFilter))
-        );
-    }
-    
-    // Apply sorting
-    filteredData.sort((a, b) => {
-        switch (vaultSortBy) {
-            case 'site':
-                return a.site.localeCompare(b.site);
-            case 'username':
-                return a.username.localeCompare(b.username);
-            case 'category':
-                return (a.category || 'General').localeCompare(b.category || 'General');
-            case 'security_score':
-                return (b.password_strength_score || 0) - (a.password_strength_score || 0);
-            case 'access_count':
-                return (b.access_count || 0) - (a.access_count || 0);
-            case 'created_at':
-                return new Date(b.created_at) - new Date(a.created_at);
-            case 'updated_at':
-            default:
-                return new Date(b.updated_at) - new Date(a.updated_at);
-        }
-    });
-
-    
-    if (filteredData.length === 0) {
-        displayEmptyVault();
-        return;
-    }
-    
-    // Display vault statistics
-    displayVaultStats(filteredData.length);
-    
-    // Display vault entries with Phase 1 enhancements
-    elements.vaultList.innerHTML = filteredData.map((item, index) => `
-        <li class="vault-item ${getSecurityClass(item)}" style="animation: fadeInUp 0.4s ease-out ${index * 0.05}s backwards;">
-            <div class="vault-info">
-                <div class="site-header">
-                    <h4 class="site-name">${escapeHtml(item.site)}</h4>
-                    <div class="vault-meta">
-                        <span class="category-badge ${(item.category || 'general').toLowerCase()}">${escapeHtml(item.category || 'General')}</span>
-                        <span class="created-date">${item.created_at}</span>
-                        ${item.updated_at !== item.created_at ? `<span class="updated-badge">Updated</span>` : ''}
-                        ${getSecurityBadge(item)}
-                    </div>
-                </div>
-                <p class="username-display">👤 ${escapeHtml(item.username)}</p>
-                <div class="password-preview">🔐 Password: ••••••••••• (AES-256 Encrypted)</div>
-                ${item.notes ? `<div class="vault-notes">📝 ${escapeHtml(item.notes).substring(0, 100)}${item.notes.length > 100 ? '...' : ''}</div>` : ''}
-                ${item.updated_at !== item.created_at ? `<div class="updated-date">Last updated: ${item.updated_at}</div>` : ''}
-                <div class="vault-stats">
-                    ${item.access_count ? `<span class="access-count">👁️ ${item.access_count} views</span>` : ''}
-                    <span class="password-age">📅 ${item.password_age_days || 0} days old</span>
-                    ${item.needs_rotation ? `<span class="rotation-needed">⚠️ Rotation needed</span>` : ''}
-                    ${item.is_breached ? `<span class="breach-warning-small">🚨 Breached</span>` : `<span class="secure-badge-small">✅ Secure</span>`}
-                </div>
-            </div>
-            <div class="vault-actions">
-                <button id="copy-btn-${item.id}" class="vault-btn copy-btn" onclick="copyVaultPassword(${item.id})" title="Secure copy">
-                    📋 <span>Copy</span>
-                </button>
-                <button id="view-btn-${item.id}" class="vault-btn view-btn" onclick="viewVaultPassword(${item.id})" title="Decrypt & view">
-                    👁️ <span>View</span>
-                </button>
-                <button id="delete-btn-${item.id}" class="vault-btn delete-btn" onclick="deleteVaultPassword(${item.id})" title="Secure delete">
-                    🗑️ <span>Delete</span>
-                </button>
-            </div>
-        </li>
-    `).join('');
-}
-
-function getSecurityClass(item) {
-    if (item.is_breached) return 'security-critical';
-    if (item.password_strength_score < 2) return 'security-weak';
-    if (item.needs_rotation) return 'security-warning';
-    return 'security-good';
-}
-
-function getSecurityBadge(item) {
-    if (item.is_breached) {
-        return `<span class="security-badge critical">🚨 Breached (${item.breach_count || 0})</span>`;
-    }
-    
-    const strengthLabels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
-    const strengthLabel = strengthLabels[item.password_strength_score] || 'Unknown';
-    
-    if (item.password_strength_score >= 4) {
-        return `<span class="security-badge strong">🛡️ ${strengthLabel}</span>`;
-    } else if (item.password_strength_score >= 3) {
-        return `<span class="security-badge good">✅ ${strengthLabel}</span>`;
-    } else if (item.password_strength_score >= 2) {
-        return `<span class="security-badge fair">⚠️ ${strengthLabel}</span>`;
-    } else {
-        return `<span class="security-badge weak">🔴 ${strengthLabel}</span>`;
-    }
-}
-
-function clearVaultFilter() {
-    vaultFilter = '';
-    if (elements.vaultSearch) {
-        elements.vaultSearch.value = '';
-    }
-    if (elements.clearSearch) {
-        elements.clearSearch.style.display = 'none';
-    }
-    updateVaultDisplay();
-}
-
-function displayEmptyVault() {
-    if (vaultFilter) {
-        elements.vaultList.innerHTML = `
-            <li class="empty-vault">
-                <div class="empty-vault-content">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
-                    <h3>No Results Found</h3>
-                    <p>No passwords match your search for "${vaultFilter}"</p>
-                    <button onclick="clearVaultFilter()" class="clear-filter-btn">Clear Filter</button>
-                </div>
-            </li>`;
-    } else {
-        elements.vaultList.innerHTML = `
-            <li class="empty-vault">
-                <div class="empty-vault-content">
-                    <div style="font-size: 4rem; margin-bottom: 1rem;">🔐</div>
-                    <h3>Your Secure Vault is Empty</h3>
-                    <p>Add your first password to experience military-grade encryption!</p>
-                    <div class="security-reminder">
-                        <strong>Security:</strong> All passwords encrypted with AES-256 before storage
-                    </div>
-                    <div class="security-features">
-                        <div class="feature">🛡️ PBKDF2 Key Derivation</div>
-                        <div class="feature">🔒 Fernet Encryption</div>
-                        <div class="feature">🚫 Zero-Knowledge Architecture</div>
-                        <div class="feature">🔍 HaveIBeenPwned Integration</div>
-                    </div>
-                </div>
-            </li>`;
-    }
-}
-
-function displayVaultStats(visibleCount) {
-    // Remove existing stats
-    const existingStats = document.querySelector('.vault-stats');
-    if (existingStats) {
-        existingStats.remove();
-    }
-    
-    const statsDiv = document.createElement('div');
-    statsDiv.className = 'vault-stats';
-    statsDiv.innerHTML = `
-        <div class="stats-grid">
-            <div class="stat-item">
-                <span class="stat-value">${visibleCount}</span>
-                <span class="stat-label">${vaultFilter ? 'Filtered' : 'Total'} Passwords</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value">${50 - vaultData.length}</span>
-                <span class="stat-label">Remaining Slots</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value">🔒</span>
-                <span class="stat-label">AES-256 Secured</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value">${Math.round((vaultData.length / 50) * 100)}%</span>
-                <span class="stat-label">Vault Usage</span>
-            </div>
-        </div>
-    `;
-    
-    if (elements.vaultList && elements.vaultList.parentNode) {
-        elements.vaultList.parentNode.insertBefore(statsDiv, elements.vaultList);
-    }
-}
-
-// ===== PHASE 1: EXPORT FUNCTIONALITY =====
-async function exportVaultData() {
-    if (!confirm('⚠️ Export vault data?\n\nThis will create a JSON file with your encrypted passwords. Keep this file secure!')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/vault', {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            const exportData = {
-                export_date: new Date().toISOString(),
-                application: 'VaultGuard Secure - Phase 1',
-                vault_entries: data.vault_entries.map(entry => ({
-                    site: entry.site,
-                    username: entry.username,
-                    category: entry.category,
-                    notes: entry.notes,
-                    created_at: entry.created_at,
-                    updated_at: entry.updated_at,
-                    password_strength_score: entry.password_strength_score,
-                    is_breached: entry.is_breached,
-                    breach_count: entry.breach_count,
-                    password_age_days: entry.password_age_days,
-                    needs_rotation: entry.needs_rotation
-                    // Note: encrypted_password is intentionally excluded for security
-                }))
-            };
-            
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `vaultguard-export-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            showNotification('Vault data exported successfully! (Passwords not included for security)', 'success');
-        } else {
-            showNotification('Failed to export vault data', 'error');
-        }
-    } catch (error) {
-        console.error('Export error:', error);
-        showNotification('Failed to export vault data', 'error');
+    // Set initial slider value display
+    if (elements.lengthSlider && elements.lengthValueDisplay) {
+        updateLengthDisplay(parseInt(elements.lengthSlider.value));
     }
 }
 
@@ -1923,14 +2175,13 @@ function displayPasswordModal(item, password) {
                     <span class="field-value">${escapeHtml(item.site)}</span>
                 </div>
                 <div class="password-field">
+                    <label>Category:</label>
+                    <span class="field-value">${escapeHtml(item.category || 'General')}</span>
+                </div>
+                <div class="password-field">
                     <label>Username:</label>
                     <span class="field-value">${escapeHtml(item.username)}</span>
                 </div>
-                ${item.category ? `
-                <div class="password-field">
-                    <label>Category:</label>
-                    <span class="field-value">${escapeHtml(item.category)}</span>
-                </div>` : ''}
                 <div class="password-field">
                     <label>Password:</label>
                     <div class="password-reveal-container">
@@ -1942,12 +2193,14 @@ function displayPasswordModal(item, password) {
                 <div class="password-field">
                     <label>Notes:</label>
                     <span class="field-value">${escapeHtml(item.notes)}</span>
-                </div>` : ''}
+                </div>
+                ` : ''}
                 <div class="password-stats">
-                    <div class="stat">Created: ${item.created_at}</div>
-                    <div class="stat">Updated: ${item.updated_at}</div>
+                    <div class="stat">Created: ${formatTimestamp(item.created_at)}</div>
+                    <div class="stat">Updated: ${formatTimestamp(item.updated_at)}</div>
+                    <div class="stat">Strength: ${item.strength_score || 0}%</div>
                     ${item.access_count ? `<div class="stat">Accessed: ${item.access_count} times</div>` : ''}
-                    ${item.password_age_days ? `<div class="stat">Age: ${item.password_age_days} days</div>` : ''}
+                    ${item.last_accessed ? `<div class="stat">Last accessed: ${formatTimestamp(item.last_accessed)}</div>` : ''}
                 </div>
                 <div class="security-timer">
                     🔒 Auto-hide in <span id="timer-${item.id}">15</span> seconds for security
@@ -1955,6 +2208,7 @@ function displayPasswordModal(item, password) {
             </div>
             <div class="modal-actions">
                 <button onclick="copyPasswordFromModal('${password.replace(/'/g, "\\'")}');" class="copy-modal-btn">📋 Secure Copy</button>
+                <button onclick="analyzePasswordFromModal('${password.replace(/'/g, "\\'")}');" class="analyze-modal-btn">🔍 Analyze Security</button>
                 <button onclick="this.closest('.password-modal').remove()" class="close-modal-btn secondary">Close</button>
             </div>
         </div>
@@ -2029,132 +2283,23 @@ async function copyPasswordFromModal(password) {
     }
 }
 
-// ===== BREACH CHECK FUNCTIONS =====
-async function checkPasswordStrength(password) {
-    try {
-        const response = await fetch('/api/check_password', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ password: password })
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-                updateBreachStatus(data.breached, data.count, data.security_level);
-                updateAdvancedMetrics(data);
-                performanceMetrics.breachCheckCount++;
-            }
-        } else {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-    } catch (error) {
-        console.error('Password strength check failed:', error);
-        if (elements.breachStatus) {
-            elements.breachStatus.innerHTML = '<span style="color: var(--text-secondary);">⚠️ Unable to check breach status</span>';
-        }
-    }
-}
-
-function updateBreachStatus(isBreached, count, securityLevel) {
-    if (!elements.breachStatus) return;
+function analyzePasswordFromModal(password) {
+    // Close modal
+    const modal = document.querySelector('.password-modal');
+    if (modal) modal.remove();
     
-    if (isBreached) {
-        let warningLevel = 'COMPROMISED';
-        let warningColor = '#ff4757';
-        let warningBg = 'rgba(255, 71, 87, 0.1)';
+    // Set password in analyzer and analyze
+    if (elements.passwordInput) {
+        elements.passwordInput.value = password;
+        analyzePassword(password);
         
-        switch (securityLevel) {
-            case 'critical':
-                warningLevel = 'CRITICAL RISK';
-                warningColor = '#ff4757';
-                warningBg = 'rgba(255, 71, 87, 0.2)';
-                break;
-            case 'high_risk':
-                warningLevel = 'HIGH RISK';
-                warningColor = '#ff6348';
-                warningBg = 'rgba(255, 99, 72, 0.1)';
-                break;
-            case 'medium_risk':
-                warningLevel = 'MEDIUM RISK';
-                warningColor = '#ffa502';
-                warningBg = 'rgba(255, 165, 2, 0.1)';
-                break;
-            default:
-                warningLevel = 'COMPROMISED';
-                warningColor = '#ff4757';
-                warningBg = 'rgba(255, 71, 87, 0.1)';
+        // Scroll to analyzer
+        const analyzerSection = document.querySelector('.password-analyzer');
+        if (analyzerSection) {
+            analyzerSection.scrollIntoView({ behavior: 'smooth' });
         }
         
-        elements.breachStatus.innerHTML = `
-            <span class="breach-warning" style="
-                color: ${warningColor}; 
-                background: ${warningBg}; 
-                padding: 0.5rem 1rem; 
-                border-radius: 6px; 
-                border: 1px solid ${warningColor}40;
-                animation: breachPulse 1.5s ease-in-out infinite; 
-                font-weight: 700;
-                display: inline-block;
-                font-size: 0.85rem;
-            ">
-                🚨 ${warningLevel}: Found in ${count.toLocaleString()} breaches!
-            </span>`;
-    } else {
-        let securityText = 'SECURE';
-        let securityColor = '#2ed573';
-        let securityBg = 'rgba(46, 213, 115, 0.1)';
-        
-        switch (securityLevel) {
-            case 'fortress':
-                securityText = 'FORTRESS LEVEL';
-                securityColor = '#2ed573';
-                break;
-            case 'military':
-                securityText = 'MILITARY GRADE';
-                securityColor = '#58a6ff';
-                securityBg = 'rgba(88, 166, 255, 0.1)';
-                break;
-            case 'strong':
-                securityText = 'STRONG SECURITY';
-                securityColor = '#2ed573';
-                break;
-            default:
-                securityText = 'SECURE';
-                securityColor = '#2ed573';
-        }
-        
-        elements.breachStatus.innerHTML = `
-            <span class="breach-safe" style="
-                color: ${securityColor}; 
-                background: ${securityBg}; 
-                padding: 0.5rem 1rem; 
-                border-radius: 6px; 
-                border: 1px solid ${securityColor}40;
-                font-weight: 700;
-                display: inline-block;
-                font-size: 0.85rem;
-            ">
-                ✅ ${securityText}: Not found in HaveIBeenPwned
-            </span>`;
-    }
-}
-
-function updateAdvancedMetrics(data) {
-    // Update additional security metrics if elements exist
-    const entropyElement = document.getElementById('passwordEntropy');
-    const timeElement = document.getElementById('crackTimeDetailed');
-    
-    if (entropyElement) {
-        const entropy = Math.log2(Math.pow(95, data.score * 2)); // Simplified entropy calculation
-        entropyElement.textContent = `${entropy.toFixed(1)} bits`;
-    }
-    
-    if (timeElement && data.crack_time) {
-        timeElement.textContent = data.crack_time;
+        showNotification('Password moved to security analyzer!', 'success');
     }
 }
 
@@ -2203,8 +2348,10 @@ function handleVisibilityChange() {
     if (document.hidden && masterPasswordCache) {
         // Clear master password cache when tab becomes hidden
         setTimeout(() => {
-            masterPasswordCache = null;
-            showNotification('Master password cleared for security', 'info');
+            if (document.hidden) { // Double-check it's still hidden
+                masterPasswordCache = null;
+                showNotification('Master password cleared for security', 'info');
+            }
         }, 30000);
     }
 }
@@ -2220,22 +2367,6 @@ function handleKeyboardShortcuts(event) {
         }
     }
     
-    // Ctrl+Shift+S: Run security check
-    if (event.ctrlKey && event.shiftKey && event.key === 'S') {
-        event.preventDefault();
-        if (document.body.classList.contains('logged-in')) {
-            runFullSecurityCheck();
-        }
-    }
-    
-    // Ctrl+Shift+N: Open notification settings
-    if (event.ctrlKey && event.shiftKey && event.key === 'N') {
-        event.preventDefault();
-        if (document.body.classList.contains('logged-in')) {
-            openNotificationSettings();
-        }
-    }
-    
     // Ctrl+C: Copy password (when focused on password input)
     if (event.ctrlKey && event.key === 'c' && document.activeElement === elements.passwordInput) {
         event.preventDefault();
@@ -2248,13 +2379,22 @@ function handleKeyboardShortcuts(event) {
             closeAuthModal();
         }
         
-        if (elements.notificationModal?.style.display === 'flex') {
-            closeNotificationSettings();
+        if (elements.securityDashboard?.style.display === 'block') {
+            elements.securityDashboard.style.display = 'none';
+        }
+        
+        if (elements.notificationSettingsModal?.style.display === 'block') {
+            elements.notificationSettingsModal.style.display = 'none';
         }
         
         const passwordModal = document.querySelector('.password-modal');
         if (passwordModal) {
             passwordModal.remove();
+        }
+        
+        const auditModal = document.querySelector('.audit-results-modal');
+        if (auditModal) {
+            auditModal.remove();
         }
     }
     
@@ -2266,10 +2406,20 @@ function handleKeyboardShortcuts(event) {
         }
     }
     
-    // Ctrl+F: Focus on vault search
-    if (event.ctrlKey && event.key === 'f' && elements.vaultSearch) {
+    // Ctrl+D: Open dashboard (if logged in)
+    if (event.ctrlKey && event.key === 'd') {
         event.preventDefault();
-        elements.vaultSearch.focus();
+        if (elements.securityDashboardBtn) {
+            toggleSecurityDashboard();
+        }
+    }
+    
+    // Ctrl+S: Save password (if in vault)
+    if (event.ctrlKey && event.key === 's') {
+        event.preventDefault();
+        if (elements.savePasswordBtn && !elements.savePasswordBtn.disabled) {
+            savePassword();
+        }
     }
 }
 
@@ -2281,37 +2431,22 @@ function recordPerformanceMetric(metric, value) {
         console.warn('Password analysis taking longer than expected:', value + 'ms');
     }
     
-    if (metric === 'breachCheckCount' && performanceMetrics.breachCheckCount > 0) {
-        console.log(`Breach checks performed: ${performanceMetrics.breachCheckCount}`);
-    }
-}
-
-// ===== INITIALIZATION HELPERS =====
-function initializePasswordGenerator() {
-    // Auto-generate initial password if on generator page
-    if (elements.generateBtn && elements.generatedPassword) {
-        setTimeout(() => {
-            generateNewPassword();
-        }, 500);
-    }
-    
-    // Set initial slider value display
-    if (elements.lengthSlider && elements.lengthValue) {
-        updateLengthDisplay(parseInt(elements.lengthSlider.value));
+    if (metric === 'apiCallCount' && value > 100) {
+        console.warn('High API call count detected:', value);
     }
 }
 
 function showSecurityStatus() {
     setTimeout(() => {
         if (location.protocol === 'https:') {
-            showNotification('🚀 Phase 1 Enhanced: HTTPS + HaveIBeenPwned integration active!', 'success');
+            showNotification('Secure HTTPS connection established with enhanced features', 'success');
         } else {
-            showNotification('⚠️ Warning: Use HTTPS for full Phase 1 security features', 'warning');
+            showNotification('Warning: Use HTTPS for maximum security and all features', 'warning');
         }
     }, 1000);
 }
 
-// ===== NOTIFICATION SYSTEM =====
+// ===== ENHANCED NOTIFICATION SYSTEM =====
 function showNotification(message, type = 'success') {
     // Remove existing notifications of the same type
     const existingNotifications = document.querySelectorAll(`.notification.${type}`);
@@ -2348,12 +2483,13 @@ function showNotification(message, type = 'success') {
         z-index: 10000;
         font-weight: 600;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        max-width: 350px;
+        max-width: 400px;
         word-wrap: break-word;
         animation: slideInRight 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         backdrop-filter: blur(15px);
         border: 1px solid rgba(255, 255, 255, 0.2);
         cursor: pointer;
+        transition: transform 0.2s ease;
     `;
     
     notification.innerHTML = `<span style="margin-right: 8px;">${icons[type] || icons.success}</span>${message}`;
@@ -2364,15 +2500,25 @@ function showNotification(message, type = 'success') {
         setTimeout(() => notification.remove(), 300);
     });
     
+    // Hover effect
+    notification.addEventListener('mouseenter', () => {
+        notification.style.transform = 'translateY(-2px) scale(1.02)';
+    });
+    
+    notification.addEventListener('mouseleave', () => {
+        notification.style.transform = 'translateY(0) scale(1)';
+    });
+    
     document.body.appendChild(notification);
     
-    // Auto-hide after 4 seconds
+    // Auto-hide based on type
+    const autoHideTime = type === 'error' ? 6000 : 4000;
     setTimeout(() => {
         if (notification.parentNode) {
             notification.style.animation = 'slideOutRight 0.3s ease-in';
             setTimeout(() => notification.remove(), 300);
         }
-    }, 4000);
+    }, autoHideTime);
 }
 
 // ===== ENHANCED CSS STYLES =====
@@ -2432,213 +2578,248 @@ function addEnhancedStyles() {
             75% { transform: translateX(5px); }
         }
         
-        /* Phase 1: Enhanced security badges */
-        .security-badge {
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .security-badge.critical {
-            background: linear-gradient(135deg, #ff4757, #ff3742);
-            color: white;
-        }
-        
-        .security-badge.weak {
-            background: linear-gradient(135deg, #ff6348, #ff4757);
-            color: white;
-        }
-        
-        .security-badge.fair {
-            background: linear-gradient(135deg, #ffa502, #ff6348);
-            color: white;
-        }
-        
-        .security-badge.good {
+        /* Enhanced Security Score Badge */
+        .security-score-badge {
             background: linear-gradient(135deg, #3742fa, #5352ed);
             color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            transition: all 0.3s ease;
         }
         
-        .security-badge.strong {
+        .security-score-badge::before {
+            content: '🛡️';
+            font-size: 1rem;
+        }
+        
+        .security-score-badge.excellent {
             background: linear-gradient(135deg, #2ed573, #17d97a);
-            color: white;
         }
         
-        /* Category badges */
-        .category-badge {
-            font-size: 0.7rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 8px;
+        .security-score-badge.good {
+            background: linear-gradient(135deg, #58a6ff, #4f94d4);
+        }
+        
+        .security-score-badge.fair {
+            background: linear-gradient(135deg, #ffa502, #ff6348);
+        }
+        
+        .security-score-badge.poor {
+            background: linear-gradient(135deg, #ff4757, #ff3742);
+        }
+        
+        /* Enhanced Header Buttons */
+        .header-btn {
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
-            text-transform: uppercase;
-            font-weight: 500;
+            color: var(--text-primary);
+            padding: 0.6rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
         }
         
-        .category-badge.banking { background: rgba(255, 165, 2, 0.2); color: #ffa502; }
-        .category-badge.social { background: rgba(58, 134, 255, 0.2); color: #3a86ff; }
-        .category-badge.work { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
-        .category-badge.email { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .header-btn:hover {
+            background: var(--glass-border);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
         
-        /* Vault security indicators */
-        .security-critical { border-left: 4px solid #ff4757 !important; }
-        .security-weak { border-left: 4px solid #ff6348 !important; }
-        .security-warning { border-left: 4px solid #ffa502 !important; }
-        .security-good { border-left: 4px solid #2ed573 !important; }
+        /* Enhanced Dashboard Styles */
+        .security-dashboard-card {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 400px;
+            max-height: 80vh;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-elevated);
+            z-index: 1000;
+            overflow-y: auto;
+            animation: modalFadeIn 0.3s ease-out;
+        }
         
-        .breach-warning-small, .secure-badge-small {
-            font-size: 0.65rem;
-            padding: 0.15rem 0.4rem;
-            border-radius: 6px;
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .close-dashboard {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        
+        .close-dashboard:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .security-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+        
+        .metric-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-bottom: 0.5rem;
+        }
+        
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
             font-weight: 600;
         }
         
-        .breach-warning-small {
-            background: rgba(255, 71, 87, 0.2);
-            color: #ff4757;
-            border: 1px solid rgba(255, 71, 87, 0.3);
+        .metric-trend {
+            font-size: 0.7rem;
+            margin-top: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-weight: 600;
         }
         
-        .secure-badge-small {
+        .metric-trend.excellent {
             background: rgba(46, 213, 115, 0.2);
             color: #2ed573;
-            border: 1px solid rgba(46, 213, 115, 0.3);
         }
         
-        .rotation-needed {
+        .metric-trend.good {
+            background: rgba(88, 166, 255, 0.2);
+            color: #58a6ff;
+        }
+        
+        .metric-trend.warning {
             background: rgba(255, 165, 2, 0.2);
             color: #ffa502;
-            font-size: 0.65rem;
-            padding: 0.15rem 0.4rem;
-            border-radius: 6px;
-            border: 1px solid rgba(255, 165, 2, 0.3);
         }
         
-        /* Vault notes styling */
-        .vault-notes {
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            font-style: italic;
-            margin: 0.5rem 0;
-            padding: 0.5rem;
-            background: var(--glass-bg);
-            border-radius: 6px;
-            border-left: 3px solid var(--accent-blue);
+        .metric-trend.critical {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
         }
         
-        /* Enhanced vault stats */
-        .vault-stats {
+        /* Enhanced Vault Item Styles */
+        .vault-item.compromised {
+            border-left: 4px solid #ff4757;
+            background: rgba(255, 71, 87, 0.05);
+        }
+        
+        .category-badge {
+            background: var(--accent-blue);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        
+        .strength-indicator {
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .strength-indicator.excellent {
+            background: rgba(46, 213, 115, 0.2);
+            color: #2ed573;
+        }
+        
+        .strength-indicator.good {
+            background: rgba(88, 166, 255, 0.2);
+            color: #58a6ff;
+        }
+        
+        .strength-indicator.fair {
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+        }
+        
+        .strength-indicator.poor {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+        }
+        
+        .compromised-indicator {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            animation: breachPulse 2s ease-in-out infinite;
+        }
+        
+        .security-indicators {
             display: flex;
             gap: 0.5rem;
+            margin: 0.5rem 0;
             flex-wrap: wrap;
-            margin-top: 0.75rem;
-            font-size: 0.7rem;
         }
         
-        .vault-stats span {
-            padding: 0.2rem 0.5rem;
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 6px;
-            font-weight: 500;
+        .password-notes {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            padding: 0.5rem;
+            border-radius: 8px;
+            margin: 0.5rem 0;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
         }
         
-        .access-count { color: var(--accent-blue); }
-        .password-age { color: var(--text-secondary); }
-        
-        /* Loading states */
-        .loading {
-            opacity: 0.7;
-            pointer-events: none;
+        .access-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
         }
         
-        .loading::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top: 2px solid var(--accent-blue, #58a6ff);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-        
-        /* Responsive design improvements */
+        /* Responsive Design Improvements */
         @media (max-width: 768px) {
-            .vault-actions {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            
-            .vault-btn {
-                justify-content: center;
-                min-width: auto;
+            .security-dashboard-card {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
                 width: 100%;
+                max-height: 100vh;
+                border-radius: 0;
             }
             
-            .password-modal-content {
-                margin: 1rem;
-                padding: 1.5rem;
-            }
-            
-            .modal-actions {
-                flex-direction: column;
-                gap: 0.75rem;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .vault-btn {
-                padding: 0.75rem 1rem;
-                font-size: 0.9rem;
-            }
-            
-            .modal-actions button {
-                width: 100%;
-            }
-            
-            .vault-stats {
-                flex-direction: column;
-                gap: 0.25rem;
-            }
-        }
-        
-        /* Accessibility improvements */
-        .vault-btn:focus,
-        .copy-modal-btn:focus,
-        .close-modal-btn:focus {
-            outline: 2px solid var(--accent-blue, #58a6ff);
-            outline-offset: 2px;
-        }
-        
-        /* High contrast mode support */
-        @media (prefers-contrast: high) {
-            .vault-btn {
-                border-width: 2px;
-            }
-            
-            .security-badge {
-                border: 2px solid currentColor;
-            }
-        }
-        
-        /* Reduced motion support */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
+            .security-metrics {
+                grid-template-columns: 1fr;
             }
         }
     `;
@@ -2647,11 +2828,11 @@ function addEnhancedStyles() {
 
 // ===== CONSOLE SECURITY WARNING =====
 function showSecurityWarning() {
-    console.log('%c🛡️ VaultGuard Security Notice - Phase 1 Enhanced', 'color: #2ed573; font-size: 16px; font-weight: bold;');
-    console.log('%cThis application handles sensitive password data.', 'color: #ffa502; font-size: 12px;');
-    console.log('%cPhase 1 Features: HaveIBeenPwned integration, enhanced logging, notifications', 'color: #58a6ff; font-size: 12px;');
+    console.log('%c🛡️ VaultGuard Enhanced Security Notice', 'color: #2ed573; font-size: 16px; font-weight: bold;');
+    console.log('%cThis enhanced application handles sensitive password data with military-grade security.', 'color: #ffa502; font-size: 12px;');
+    console.log('%cFeatures: HTTPS, AES-256, Real-time breach detection, Smart notifications, Security dashboard', 'color: #58a6ff; font-size: 12px;');
     console.log('%cDo not paste or execute unknown code in this console.', 'color: #ff4757; font-size: 12px;');
-    console.log('%cAll passwords are encrypted with AES-256 before storage.', 'color: #8b5cf6; font-size: 12px;');
+    console.log('%cAll passwords are encrypted with AES-256 and monitored for breaches.', 'color: #58a6ff; font-size: 12px;');
 }
 
 // ===== ERROR HANDLING =====
@@ -2681,89 +2862,51 @@ window.addEventListener('beforeunload', () => {
     if (navigator.clipboard) {
         navigator.clipboard.writeText('').catch(() => {});
     }
+    
+    // Clear form data
+    if (elements.passwordInput) elements.passwordInput.value = '';
+    if (elements.generatedPassword) elements.generatedPassword.value = '';
+    if (elements.vaultPassword) elements.vaultPassword.value = '';
 });
-
-// Enhanced search functionality for vault
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('vault-search');
-    const clearBtn = document.getElementById('clearSearch');
-    const sortSelect = document.getElementById('vault-sort');
-    
-    // Search input enhancements
-    if (searchInput && clearBtn) {
-        searchInput.addEventListener('input', function() {
-            if (this.value.length > 0) {
-                clearBtn.style.display = 'block';
-            } else {
-                clearBtn.style.display = 'none';
-            }
-            
-            // Trigger search with debouncing
-            clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                filterVaultEntries(this.value);
-            }, 300);
-        });
-        
-        clearBtn.addEventListener('click', function() {
-            searchInput.value = '';
-            clearBtn.style.display = 'none';
-            filterVaultEntries('');
-            searchInput.focus();
-        });
-    }
-    
-    // Enhanced sort functionality
-    if (sortSelect) {
-        sortSelect.addEventListener('change', function() {
-            sortVaultEntries(this.value);
-        });
-    }
-});
-
-// Fix timestamp formatting in JavaScript
-function formatTimestamp(dateString) {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffHours / 24);
-    
-    if (diffHours < 1) {
-        return 'Just now';
-    } else if (diffHours < 24) {
-        return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    } else if (diffDays < 7) {
-        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    } else {
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    }
-}
 
 // ===== GLOBAL FUNCTION EXPORTS =====
 // Make functions available globally for onclick handlers
 window.copyVaultPassword = copyVaultPassword;
 window.viewVaultPassword = viewVaultPassword;
+window.editVaultPassword = editVaultPassword;
 window.deleteVaultPassword = deleteVaultPassword;
 window.clearVaultFilter = clearVaultFilter;
 window.togglePasswordVisibilityInModal = togglePasswordVisibilityInModal;
 window.copyPasswordFromModal = copyPasswordFromModal;
+window.analyzePasswordFromModal = analyzePasswordFromModal;
 
-// Export enhanced Phase 1 object for global access
-window.VaultGuard = {
+// Export main object for global access if needed
+window.VaultGuardEnhanced = {
+    // Core functions
     analyzePassword,
     generateRandomPassword,
     openAuthModal,
     closeAuthModal,
     showNotification,
     initialize,
-    // Phase 1 additions
+    
+    // Enhanced features
     loadSecurityDashboard,
-    runFullSecurityCheck,
-    openNotificationSettings,
-    saveNotificationPreferences,
+    runSecurityAudit,
     exportVaultData,
-    version: 'Phase 1 Enhanced'
+    loadVaultData,
+    
+    // Utilities
+    formatTimestamp,
+    escapeHtml,
+    debounce,
+    throttle,
+    
+    // State
+    getSecurityScore: () => securityScore,
+    getVaultData: () => vaultData,
+    getDashboardData: () => dashboardData,
+    getPerformanceMetrics: () => performanceMetrics
 };
 
 // ===== MAIN INITIALIZATION =====
@@ -2776,3 +2919,287 @@ if (document.readyState === 'loading') {
 
 // Show security warning in console
 showSecurityWarning();
+
+// ===== ENHANCED FEATURES INITIALIZATION =====
+// Additional initialization for enhanced features
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize notification settings if logged in
+    if (document.body.classList.contains('logged-in')) {
+        // Auto-load security score
+        setTimeout(() => {
+            if (elements.securityScoreValue && securityScore > 0) {
+                elements.securityScoreValue.textContent = securityScore;
+            }
+        }, 1000);
+        
+        // Check for security warnings
+        setTimeout(() => {
+            if (dashboardData) {
+                if (dashboardData.compromised_passwords > 0) {
+                    showNotification(`⚠️ You have ${dashboardData.compromised_passwords} compromised passwords! Check your security dashboard.`, 'warning');
+                }
+                
+                if (dashboardData.password_age_warning) {
+                    showNotification('Your master password is over 90 days old. Consider updating it for better security.', 'warning');
+                }
+            }
+        }, 3000);
+    }
+    
+    // Enhanced search functionality
+    const searchInput = document.getElementById('vault-search');
+    const clearBtn = document.getElementById('clearSearch');
+    
+    if (searchInput && clearBtn) {
+        // Enhanced search with categories and notes
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            
+            if (searchTerm.length > 0) {
+                clearBtn.style.display = 'block';
+                
+                // Highlight matching results
+                const vaultItems = document.querySelectorAll('.vault-item');
+                vaultItems.forEach(item => {
+                    const siteName = item.querySelector('.site-name')?.textContent.toLowerCase() || '';
+                    const username = item.querySelector('.username-display')?.textContent.toLowerCase() || '';
+                    const category = item.querySelector('.category-badge')?.textContent.toLowerCase() || '';
+                    const notes = item.querySelector('.password-notes')?.textContent.toLowerCase() || '';
+                    
+                    const matches = siteName.includes(searchTerm) || 
+                                  username.includes(searchTerm) || 
+                                  category.includes(searchTerm) || 
+                                  notes.includes(searchTerm);
+                    
+                    if (matches) {
+                        item.style.display = 'block';
+                        item.style.border = '2px solid var(--accent-blue)';
+                        item.style.background = 'rgba(88, 166, 255, 0.05)';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            } else {
+                clearBtn.style.display = 'none';
+                
+                // Reset all items
+                const vaultItems = document.querySelectorAll('.vault-item');
+                vaultItems.forEach(item => {
+                    item.style.display = 'block';
+                    item.style.border = '';
+                    item.style.background = '';
+                });
+            }
+        });
+        
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearBtn.style.display = 'none';
+            
+            // Reset all items
+            const vaultItems = document.querySelectorAll('.vault-item');
+            vaultItems.forEach(item => {
+                item.style.display = 'block';
+                item.style.border = '';
+                item.style.background = '';
+            });
+            
+            searchInput.focus();
+        });
+    }
+    
+    // Enhanced keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+A: Run security audit
+        if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+            e.preventDefault();
+            if (elements.auditVault) {
+                runSecurityAudit();
+            }
+        }
+        
+        // Ctrl+Shift+E: Export vault
+        if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+            e.preventDefault();
+            if (elements.exportVault) {
+                exportVaultData();
+            }
+        }
+        
+        // Ctrl+Shift+N: Open notification settings
+        if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+            e.preventDefault();
+            if (elements.notificationSettingsBtn) {
+                elements.notificationSettingsBtn.click();
+            }
+        }
+        
+        // F1: Show help/shortcuts
+        if (e.key === 'F1') {
+            e.preventDefault();
+            showKeyboardShortcuts();
+        }
+    });
+    
+    // Auto-save form data to prevent loss
+    const formInputs = [elements.siteName, elements.vaultUsername, elements.vaultPassword, elements.vaultNotes];
+    formInputs.forEach(input => {
+        if (input) {
+            input.addEventListener('input', debounce(() => {
+                const formData = {
+                    site: elements.siteName?.value || '',
+                    username: elements.vaultUsername?.value || '',
+                    password: elements.vaultPassword?.value || '',
+                    notes: elements.vaultNotes?.value || '',
+                    category: elements.vaultCategory?.value || 'General'
+                };
+                
+                // Only save if there's meaningful data
+                if (formData.site || formData.username) {
+                    sessionStorage.setItem('vaultguard_form_data', JSON.stringify(formData));
+                }
+            }, 1000));
+        }
+    });
+    
+    // Restore form data on page load
+    try {
+        const savedFormData = sessionStorage.getItem('vaultguard_form_data');
+        if (savedFormData) {
+            const formData = JSON.parse(savedFormData);
+            
+            if (elements.siteName) elements.siteName.value = formData.site || '';
+            if (elements.vaultUsername) elements.vaultUsername.value = formData.username || '';
+            if (elements.vaultNotes) elements.vaultNotes.value = formData.notes || '';
+            if (elements.vaultCategory) elements.vaultCategory.value = formData.category || 'General';
+            
+            // Don't restore password for security
+            if (formData.site || formData.username) {
+                showNotification('Form data restored from previous session', 'info');
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to restore form data:', error);
+    }
+    
+    // Clear saved form data when password is saved successfully
+    if (elements.savePasswordBtn) {
+        const originalSavePassword = savePassword;
+        savePassword = async function() {
+            const result = await originalSavePassword.apply(this, arguments);
+            if (result !== false) { // If save was successful
+                sessionStorage.removeItem('vaultguard_form_data');
+            }
+            return result;
+        };
+    }
+});
+
+function showKeyboardShortcuts() {
+    const shortcuts = [
+        { key: 'Ctrl+G', action: 'Generate password' },
+        { key: 'Ctrl+C', action: 'Copy password (when focused)' },
+        { key: 'Ctrl+L', action: 'Open login modal' },
+        { key: 'Ctrl+D', action: 'Toggle security dashboard' },
+        { key: 'Ctrl+S', action: 'Save password to vault' },
+        { key: 'Ctrl+Shift+A', action: 'Run security audit' },
+        { key: 'Ctrl+Shift+E', action: 'Export vault data' },
+        { key: 'Ctrl+Shift+N', action: 'Open notification settings' },
+        { key: 'Escape', action: 'Close modals/dialogs' },
+        { key: 'F1', action: 'Show this help' }
+    ];
+    
+    const modal = document.createElement('div');
+    modal.className = 'keyboard-shortcuts-modal';
+    modal.innerHTML = `
+        <div class="shortcuts-card">
+            <div class="shortcuts-header">
+                <h2>⌨️ Keyboard Shortcuts</h2>
+                <button onclick="this.closest('.keyboard-shortcuts-modal').remove()" class="close-shortcuts">×</button>
+            </div>
+            <div class="shortcuts-content">
+                ${shortcuts.map(shortcut => `
+                    <div class="shortcut-item">
+                        <kbd class="shortcut-key">${shortcut.key}</kbd>
+                        <span class="shortcut-action">${shortcut.action}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="shortcuts-footer">
+                <p>💡 Pro tip: Most shortcuts work globally, some require focus on specific elements</p>
+            </div>
+        </div>
+    `;
+    
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10001;
+        animation: modalFadeIn 0.3s ease-out;
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close on click outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    // Auto-close after 10 seconds
+    setTimeout(() => {
+        if (modal.parentNode) {
+            modal.remove();
+        }
+    }, 10000);
+}
+
+// ===== PERIODIC SECURITY CHECKS =====
+// Run periodic security checks if logged in
+if (document.body.classList.contains('logged-in')) {
+    // Check for compromised passwords every 30 minutes
+    setInterval(async () => {
+        if (vaultData.length > 0 && currentUserSalt) {
+            const compromisedCount = vaultData.filter(item => item.is_compromised).length;
+            const weakCount = vaultData.filter(item => (item.strength_score || 0) < 50).length;
+            
+            if (compromisedCount > 0 || weakCount > 5) {
+                showNotification(`Security Alert: ${compromisedCount} compromised and ${weakCount} weak passwords detected. Run a security audit!`, 'warning');
+            }
+        }
+    }, 30 * 60 * 1000); // 30 minutes
+    
+    // Refresh security dashboard every 5 minutes
+    setInterval(async () => {
+        if (elements.securityDashboard?.style.display === 'block') {
+            await loadSecurityDashboard();
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+}
+
+// ===== PERFORMANCE MONITORING =====
+// Monitor performance and show warnings
+setInterval(() => {
+    if (performanceMetrics.apiCallCount > 50) {
+        console.warn('High API usage detected. Consider optimizing requests.');
+        performanceMetrics.apiCallCount = 0; // Reset counter
+    }
+    
+    // Check memory usage if available
+    if (performance.memory) {
+        const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024; // MB
+        if (memoryUsage > 100) {
+            console.warn(`High memory usage: ${memoryUsage.toFixed(2)}MB`);
+        }
+    }
+}, 60000); // Every minute
+
+console.log('🎉 VaultGuard Enhanced fully loaded with all security features!');
