@@ -82,6 +82,39 @@ def load_user(user_id):
         return user
     except (ValueError, TypeError):
         return None
+    
+# Add this function to your existing app.py
+def check_password_breach_advanced(password):
+    """Enhanced breach checking with k-anonymity"""
+    try:
+        import hashlib
+        import requests
+        
+        # Generate SHA-1 hash
+        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        prefix = sha1_hash[:5]
+        suffix = sha1_hash[5:]
+        
+        # Query HaveIBeenPwned API
+        url = f"https://api.pwnedpasswords.com/range/{prefix}"
+        headers = {'Add-Padding': 'true'}
+        
+        response = requests.get(url, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            # Parse response
+            for line in response.text.splitlines():
+                parts = line.split(':')
+                if len(parts) == 2 and parts[0] == suffix:
+                    count = int(parts[1])
+                    return True, count
+            return False, 0
+        else:
+            return False, 0
+            
+    except Exception as e:
+        logger.warning(f"Breach check failed: {e}")
+        return False, 0
 
 # --------------------------------------------------------
 # Enhanced Database Models
