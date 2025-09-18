@@ -1792,6 +1792,12 @@ def create_default_admin():
         except Exception as e:
             logger.error(f"Failed to create admin user: {e}")
 
+# Add this to prevent timeouts
+@app.before_request
+def extend_session():
+    session.permanent = True
+    app.permanent_session_lifetime = timedelta(minutes=30)
+    
 # --------------------------------------------------------
 # Run Application with Enhanced Security
 # --------------------------------------------------------
