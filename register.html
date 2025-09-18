@@ -3,28 +3,389 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - PassManager</title>
+    <title>Register - VaultGuard Secure</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="description" content="Create your secure VaultGuard account with enhanced notifications">
 </head>
 <body data-theme="dark">
     <div class="auth-container">
         <div class="auth-page-card">
-            <h2>Join PassManager</h2>
-            <form id="register-form" method="POST" action="{{ url_for('register') }}">
-                <div class="input-group">
-                    <label for="username">Username</label>
-                    <input type="text" name="username" id="username" required>
+            <div class="logo-section">
+                <div class="logo-icon">🛡️</div>
+                <h1>VaultGuard <span class="secure-badge">SECURE</span></h1>
+                <p class="tagline">Create Your Professional Security Account</p>
+            </div>
+            
+            <div class="security-notice">
+                <span class="security-icon">🔑</span>
+                <span>HTTPS Protected • Military-Grade Encryption • Smart Notifications</span>
+            </div>
+            
+            <form id="register-form" method="POST">
+                <div class="form-section">
+                    <h3>Account Information</h3>
+                    <div class="input-group">
+                        <label for="username">Username *</label>
+                        <input type="text" name="username" id="username" required 
+                               placeholder="Choose a unique username (3+ characters)"
+                               minlength="3" maxlength="50">
+                        <small class="input-hint">Only letters, numbers, dots, hyphens, and underscores allowed</small>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="password">Master Password *</label>
+                        <input type="password" name="password" id="password" required 
+                               placeholder="Create a strong master password (12+ characters)"
+                               minlength="12" maxlength="128">
+                        <small class="input-hint">Must contain: uppercase, lowercase, numbers, and symbols</small>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="confirm-password">Confirm Password *</label>
+                        <input type="password" name="confirm_password" id="confirm-password" required 
+                               placeholder="Confirm your master password">
+                    </div>
                 </div>
-                <div class="input-group">
-                    <label for="password">Password</label>
-                    <input type="password" name="password" id="password" required>
+                
+                <div class="form-section">
+                    <h3>Contact Information <span class="optional-text">(Optional but Recommended)</span></h3>
+                    <div class="contact-notice">
+                        <span class="notice-icon">📧</span>
+                        <span>Add contact info for security alerts, breach notifications, and password recovery</span>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" name="email" id="email" 
+                               placeholder="your.email@example.com"
+                               maxlength="120">
+                        <small class="input-hint">Used for security alerts and password recovery</small>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" name="phone" id="phone" 
+                               placeholder="+1234567890 or 1234567890"
+                               maxlength="20">
+                        <small class="input-hint">Alternative contact method for critical security alerts</small>
+                    </div>
                 </div>
-                <button type="submit" class="auth-button">Create Account</button>
+                
+                <div class="form-section">
+                    <h3>Notification Preferences</h3>
+                    <div class="checkbox-group-vertical">
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="email_notifications" id="email-notifications" checked>
+                            <span class="checkmark"></span>
+                            <div class="checkbox-content">
+                                <span class="checkbox-label">Email Notifications</span>
+                                <small class="checkbox-desc">Receive general security notifications via email</small>
+                            </div>
+                        </label>
+                        
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="security_alerts" id="security-alerts" checked>
+                            <span class="checkmark"></span>
+                            <div class="checkbox-content">
+                                <span class="checkbox-label">Security Alerts</span>
+                                <small class="checkbox-desc">Critical security events (breaches, suspicious activity)</small>
+                            </div>
+                        </label>
+                        
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="login_notifications" id="login-notifications" checked>
+                            <span class="checkmark"></span>
+                            <div class="checkbox-content">
+                                <span class="checkbox-label">Login Notifications</span>
+                                <small class="checkbox-desc">Alerts for new device logins</small>
+                            </div>
+                        </label>
+                        
+                        <label class="checkbox-item">
+                            <input type="checkbox" name="breach_notifications" id="breach-notifications" checked>
+                            <span class="checkmark"></span>
+                            <div class="checkbox-content">
+                                <span class="checkbox-label">Breach Notifications</span>
+                                <small class="checkbox-desc">Alerts when your passwords are found in data breaches</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="auth-button" id="register-btn">
+                    <span class="btn-icon">🛡️</span>
+                    Create Secure Account
+                </button>
+                
+                <div class="password-strength-indicator" id="password-strength" style="display: none;">
+                    <div class="strength-bar">
+                        <div class="strength-fill" id="strength-fill"></div>
+                    </div>
+                    <span class="strength-text" id="strength-text">Password strength will appear here</span>
+                </div>
             </form>
-            <p class="auth-page-link">Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
-            <p class="auth-page-link"><a href="{{ url_for('home') }}">← Back to Home</a></p>
+            
+            <div class="auth-footer">
+                <p class="auth-page-link">
+                    Already have an account? 
+                    <a href="{{ url_for('home') }}#login">Login Here</a>
+                </p>
+                <p class="auth-page-link">
+                    <a href="{{ url_for('home') }}">← Back to Home</a>
+                </p>
+            </div>
+            
+            <div class="security-features">
+                <h4>Your Account Will Include:</h4>
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <span class="feature-icon">🔐</span>
+                        <span>AES-256 Encryption</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔍</span>
+                        <span>Breach Monitoring</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">📧</span>
+                        <span>Smart Notifications</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">📊</span>
+                        <span>Security Dashboard</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔑</span>
+                        <span>Password Recovery</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">📱</span>
+                        <span>Device Management</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Creating your secure account...</p>
+        </div>
+    </div>
+    
+    <script>
+        // Form validation and submission
+        document.getElementById('register-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const password = formData.get('password');
+            const confirmPassword = formData.get('confirm_password');
+            const username = formData.get('username');
+            const email = formData.get('email');
+            const phone = formData.get('phone');
+            
+            // Client-side validation
+            if (password !== confirmPassword) {
+                showNotification('Passwords do not match', 'error');
+                return;
+            }
+            
+            if (username.length < 3) {
+                showNotification('Username must be at least 3 characters long', 'error');
+                return;
+            }
+            
+            if (password.length < 12) {
+                showNotification('Password must be at least 12 characters long', 'error');
+                return;
+            }
+            
+            // Email validation (if provided)
+            if (email && !isValidEmail(email)) {
+                showNotification('Please enter a valid email address', 'error');
+                return;
+            }
+            
+            // Phone validation (if provided)  
+            if (phone && !isValidPhone(phone)) {
+                showNotification('Please enter a valid phone number', 'error');
+                return;
+            }
+            
+            showLoadingOverlay(true);
+            
+            try {
+                // Prepare registration data
+                const registrationData = {
+                    username: username,
+                    password: password,
+                    email: email || null,
+                    phone: phone || null,
+                    email_notifications: document.getElementById('email-notifications').checked,
+                    security_alerts: document.getElementById('security-alerts').checked,
+                    login_notifications: document.getElementById('login-notifications').checked,
+                    breach_notifications: document.getElementById('breach-notifications').checked
+                };
+                
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(registrationData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Account created successfully! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    showNotification(data.message || 'Registration failed', 'error');
+                }
+                
+            } catch (error) {
+                showNotification('Network error. Please try again.', 'error');
+                console.error('Registration error:', error);
+            } finally {
+                showLoadingOverlay(false);
+            }
+        });
+        
+        // Password strength checker
+        document.getElementById('password').addEventListener('input', function() {
+            const password = this.value;
+            if (password.length > 0) {
+                checkPasswordStrength(password);
+            } else {
+                document.getElementById('password-strength').style.display = 'none';
+            }
+        });
+        
+        function checkPasswordStrength(password) {
+            const strengthIndicator = document.getElementById('password-strength');
+            const strengthFill = document.getElementById('strength-fill');
+            const strengthText = document.getElementById('strength-text');
+            
+            let score = 0;
+            let feedback = [];
+            
+            // Length check
+            if (password.length >= 12) score += 25;
+            else feedback.push('Use at least 12 characters');
+            
+            // Character variety checks
+            if (/[a-z]/.test(password)) score += 20;
+            else feedback.push('Add lowercase letters');
+            
+            if (/[A-Z]/.test(password)) score += 20;
+            else feedback.push('Add uppercase letters');
+            
+            if (/[0-9]/.test(password)) score += 20;
+            else feedback.push('Add numbers');
+            
+            if (/[^a-zA-Z0-9]/.test(password)) score += 15;
+            else feedback.push('Add symbols');
+            
+            // Determine strength level
+            let strengthClass = 'weak';
+            let strengthLabel = 'Weak';
+            
+            if (score >= 85) {
+                strengthClass = 'excellent';
+                strengthLabel = 'Excellent';
+            } else if (score >= 70) {
+                strengthClass = 'strong';
+                strengthLabel = 'Strong';
+            } else if (score >= 50) {
+                strengthClass = 'good';
+                strengthLabel = 'Good';
+            } else if (score >= 30) {
+                strengthClass = 'fair';
+                strengthLabel = 'Fair';
+            }
+            
+            // Update UI
+            strengthIndicator.style.display = 'block';
+            strengthFill.style.width = score + '%';
+            strengthFill.className = `strength-fill ${strengthClass}`;
+            strengthText.textContent = `${strengthLabel} (${score}%)${feedback.length > 0 ? ' - ' + feedback.join(', ') : ''}`;
+        }
+        
+        // Utility functions
+        function isValidEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+        
+        function isValidPhone(phone) {
+            const cleanPhone = phone.replace(/\D/g, '');
+            return cleanPhone.length >= 10 && cleanPhone.length <= 15;
+        }
+        
+        function showLoadingOverlay(show) {
+            document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+            document.getElementById('register-btn').disabled = show;
+        }
+        
+        function showNotification(message, type) {
+            // Remove existing notifications
+            const existing = document.querySelectorAll('.notification');
+            existing.forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            
+            const colors = {
+                success: '#2ed573',
+                error: '#ff4757',
+                warning: '#ffa502',
+                info: '#3742fa'
+            };
+            
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${colors[type] || colors.info};
+                color: white;
+                padding: 1rem 1.5rem;
+                border-radius: 8px;
+                z-index: 10000;
+                font-weight: 600;
+                max-width: 400px;
+                word-wrap: break-word;
+                animation: slideIn 0.3s ease-out;
+            `;
+            
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Auto remove after 4 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 4000);
+            
+            // Click to dismiss
+            notification.addEventListener('click', () => {
+                notification.remove();
+            });
+        }
+        
+        // CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
 </body>
 </html>
