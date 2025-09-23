@@ -1189,7 +1189,7 @@ def delete_vault_entry(entry_id):
 # --------------------------------------------------------
 @app.route('/api/security/dashboard', methods=['GET'])
 @login_required
-def security_dashboard():
+def security_dashboard_api():
     try:
         # Calculate security metrics
         total_passwords = VaultEntry.query.filter_by(user_id=current_user.id).count()
