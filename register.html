@@ -3,388 +3,735 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - VaultGuard Secure</title>
+    <title>Register - VaultGuard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <meta name="description" content="Create your secure VaultGuard account with enhanced notifications">
+    <style>
+        .auth-page-card {
+            max-width: 480px;
+            width: 90%;
+        }
+        
+        .notification-settings {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .notification-settings h3 {
+            margin-top: 0;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .checkbox-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-green);
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            color: var(--text-secondary);
+            cursor: pointer;
+            flex: 1;
+            font-size: 0.9rem;
+            line-height: 1.3;
+        }
+        
+        .checkbox-item.checked label {
+            color: var(--text-primary);
+        }
+        
+        .contact-info {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .contact-info h3 {
+            margin-top: 0;
+            color: var(--accent-blue);
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .contact-info p {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.4;
+        }
+        
+        .contact-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        .input-group.optional label::after {
+            content: " (optional)";
+            color: var(--text-tertiary);
+            font-size: 0.8rem;
+            font-weight: normal;
+        }
+        
+        .password-strength-indicator {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.85rem;
+        }
+        
+        .strength-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin: 0.5rem 0;
+            overflow: hidden;
+        }
+        
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            transition: all 0.3s ease;
+            border-radius: 2px;
+        }
+        
+        .strength-weak { background: #ff4757; }
+        .strength-fair { background: #ffa502; }
+        .strength-good { background: #2ed573; }
+        .strength-strong { background: #58a6ff; }
+        
+        .requirements {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        
+        .requirement {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            padding: 0.25rem 0;
+        }
+        
+        .requirement .icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+        }
+        
+        .requirement.met .icon {
+            background: var(--accent-green);
+            color: white;
+        }
+        
+        .auth-button {
+            margin-top: 2rem;
+        }
+        
+        .security-features {
+            background: rgba(46, 213, 115, 0.1);
+            border: 1px solid rgba(46, 213, 115, 0.3);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .security-features h3 {
+            margin-top: 0;
+            color: var(--accent-green);
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        
+        .feature-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(46, 213, 115, 0.2);
+            color: var(--accent-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 768px) {
+            .contact-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .requirements {
+                grid-template-columns: 1fr;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body data-theme="dark">
     <div class="auth-container">
         <div class="auth-page-card">
-            <div class="logo-section">
-                <div class="logo-icon">🛡️</div>
-                <h1>VaultGuard <span class="secure-badge">SECURE</span></h1>
-                <p class="tagline">Create Your Professional Security Account</p>
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <h1 style="margin: 0; color: var(--accent-green); font-size: 1.8rem;">
+                    🛡️ Join VaultGuard
+                </h1>
+                <p style="color: var(--text-secondary); margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                    Create your secure password vault with military-grade encryption
+                </p>
             </div>
-            
-            <div class="security-notice">
-                <span class="security-icon">🔑</span>
-                <span>HTTPS Protected • Military-Grade Encryption • Smart Notifications</span>
-            </div>
-            
-            <form id="register-form" method="POST">
-                <div class="form-section">
-                    <h3>Account Information</h3>
-                    <div class="input-group">
-                        <label for="username">Username *</label>
-                        <input type="text" name="username" id="username" required 
-                               placeholder="Choose a unique username (3+ characters)"
-                               minlength="3" maxlength="50">
-                        <small class="input-hint">Only letters, numbers, dots, hyphens, and underscores allowed</small>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="password">Master Password *</label>
+
+            <form id="register-form">
+                <!-- Basic Information -->
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" name="username" id="username" required 
+                           placeholder="Enter your username" autocomplete="username">
+                    <div id="username-feedback" class="field-feedback"></div>
+                </div>
+
+                <div class="input-group">
+                    <label for="password">Master Password</label>
+                    <div style="position: relative;">
                         <input type="password" name="password" id="password" required 
-                               placeholder="Create a strong master password (12+ characters)"
-                               minlength="12" maxlength="128">
-                        <small class="input-hint">Must contain: uppercase, lowercase, numbers, and symbols</small>
+                               placeholder="Create a strong master password" autocomplete="new-password">
+                        <button type="button" id="toggle-password" class="password-toggle">👁️</button>
                     </div>
-                    
-                    <div class="input-group">
-                        <label for="confirm-password">Confirm Password *</label>
-                        <input type="password" name="confirm_password" id="confirm-password" required 
-                               placeholder="Confirm your master password">
+                    <div id="password-strength" class="password-strength-indicator" style="display: none;">
+                        <div class="strength-info">
+                            <span id="strength-text">Enter password to check strength</span>
+                            <div class="strength-bar">
+                                <div id="strength-fill" class="strength-fill"></div>
+                            </div>
+                        </div>
+                        <div class="requirements">
+                            <div class="requirement" id="req-length">
+                                <span class="icon">○</span>
+                                <span>12+ characters</span>
+                            </div>
+                            <div class="requirement" id="req-upper">
+                                <span class="icon">○</span>
+                                <span>Uppercase letter</span>
+                            </div>
+                            <div class="requirement" id="req-lower">
+                                <span class="icon">○</span>
+                                <span>Lowercase letter</span>
+                            </div>
+                            <div class="requirement" id="req-number">
+                                <span class="icon">○</span>
+                                <span>Number</span>
+                            </div>
+                            <div class="requirement" id="req-symbol">
+                                <span class="icon">○</span>
+                                <span>Special character</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="form-section">
-                    <h3>Contact Information <span class="optional-text">(Optional but Recommended)</span></h3>
-                    <div class="contact-notice">
-                        <span class="notice-icon">📧</span>
-                        <span>Add contact info for security alerts, breach notifications, and password recovery</span>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="email">Email Address</label>
-                        <input type="email" name="email" id="email" 
-                               placeholder="your.email@example.com"
-                               maxlength="120">
-                        <small class="input-hint">Used for security alerts and password recovery</small>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="phone">Phone Number</label>
-                        <input type="tel" name="phone" id="phone" 
-                               placeholder="+1234567890 or 1234567890"
-                               maxlength="20">
-                        <small class="input-hint">Alternative contact method for critical security alerts</small>
+
+                <!-- Contact Information -->
+                <div class="contact-info">
+                    <h3>📧 Contact Information</h3>
+                    <p>Add your email for account recovery and security notifications</p>
+                    <div class="contact-row">
+                        <div class="input-group optional">
+                            <label for="email">Email</label>
+                            <input type="email" name="email" id="email" 
+                                   placeholder="your@email.com" autocomplete="email">
+                        </div>
+                        <div class="input-group optional">
+                            <label for="phone">Phone</label>
+                            <input type="tel" name="phone" id="phone" 
+                                   placeholder="+1234567890" autocomplete="tel">
+                        </div>
                     </div>
                 </div>
-                
-                <div class="form-section">
-                    <h3>Notification Preferences</h3>
-                    <div class="checkbox-group-vertical">
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="email_notifications" id="email-notifications" checked>
-                            <span class="checkmark"></span>
-                            <div class="checkbox-content">
-                                <span class="checkbox-label">Email Notifications</span>
-                                <small class="checkbox-desc">Receive general security notifications via email</small>
-                            </div>
-                        </label>
+
+                <!-- Notification Settings -->
+                <div class="notification-settings">
+                    <h3>🔔 Notification Preferences</h3>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="email-notifications" name="email_notifications" checked>
+                            <label for="email-notifications">
+                                <strong>Email Notifications</strong><br>
+                                Get important updates about your account
+                            </label>
+                        </div>
                         
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="security_alerts" id="security-alerts" checked>
-                            <span class="checkmark"></span>
-                            <div class="checkbox-content">
-                                <span class="checkbox-label">Security Alerts</span>
-                                <small class="checkbox-desc">Critical security events (breaches, suspicious activity)</small>
-                            </div>
-                        </label>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="security-alerts" name="security_alerts" checked>
+                            <label for="security-alerts">
+                                <strong>Security Alerts</strong><br>
+                                Immediate alerts for suspicious activities
+                            </label>
+                        </div>
                         
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="login_notifications" id="login-notifications" checked>
-                            <span class="checkmark"></span>
-                            <div class="checkbox-content">
-                                <span class="checkbox-label">Login Notifications</span>
-                                <small class="checkbox-desc">Alerts for new device logins</small>
-                            </div>
-                        </label>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="login-notifications" name="login_notifications" checked>
+                            <label for="login-notifications">
+                                <strong>Login Notifications</strong><br>
+                                Get notified when someone logs into your account
+                            </label>
+                        </div>
                         
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="breach_notifications" id="breach-notifications" checked>
-                            <span class="checkmark"></span>
-                            <div class="checkbox-content">
-                                <span class="checkbox-label">Breach Notifications</span>
-                                <small class="checkbox-desc">Alerts when your passwords are found in data breaches</small>
-                            </div>
-                        </label>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="breach-notifications" name="breach_notifications" checked>
+                            <label for="breach-notifications">
+                                <strong>Breach Notifications</strong><br>
+                                Alerts when your passwords are found in data breaches
+                            </label>
+                        </div>
                     </div>
                 </div>
-                
+
+                <!-- Security Features -->
+                <div class="security-features">
+                    <h3>🔒 Your Security Features</h3>
+                    <div class="features-grid">
+                        <div class="feature-item">
+                            <span class="feature-icon">🛡️</span>
+                            <span>AES-256 Encryption</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">🔐</span>
+                            <span>Zero-Knowledge Architecture</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">🚫</span>
+                            <span>Breach Monitoring</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">📱</span>
+                            <span>Multi-Device Sync</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">🔄</span>
+                            <span>Automatic Backups</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">⚡</span>
+                            <span>Instant Password Generation</span>
+                        </div>
+                    </div>
+                </div>
+
                 <button type="submit" class="auth-button" id="register-btn">
-                    <span class="btn-icon">🛡️</span>
-                    Create Secure Account
+                    <span id="register-text">🚀 Create Secure Account</span>
                 </button>
-                
-                <div class="password-strength-indicator" id="password-strength" style="display: none;">
-                    <div class="strength-bar">
-                        <div class="strength-fill" id="strength-fill"></div>
-                    </div>
-                    <span class="strength-text" id="strength-text">Password strength will appear here</span>
-                </div>
             </form>
-            
-            <div class="auth-footer">
+
+            <div style="text-align: center; margin-top: 1.5rem;">
                 <p class="auth-page-link">
                     Already have an account? 
-                    <a href="{{ url_for('home') }}#login">Login Here</a>
+                    <a href="{{ url_for('login') }}" style="color: var(--accent-blue);">Login here</a>
                 </p>
                 <p class="auth-page-link">
-                    <a href="{{ url_for('home') }}">← Back to Home</a>
+                    <a href="{{ url_for('home') }}" style="color: var(--text-secondary);">← Back to Home</a>
                 </p>
             </div>
-            
-            <div class="security-features">
-                <h4>Your Account Will Include:</h4>
-                <div class="features-grid">
-                    <div class="feature-item">
-                        <span class="feature-icon">🔐</span>
-                        <span>AES-256 Encryption</span>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="modal" style="display: none;">
+        <div class="modal-content success-modal">
+            <div class="modal-header">
+                <h3>🎉 Account Created Successfully!</h3>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin: 2rem 0;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🛡️</div>
+                    <h3 style="color: var(--accent-green); margin-bottom: 1rem;">Welcome to VaultGuard!</h3>
+                    <p style="color: var(--text-secondary); line-height: 1.6;">
+                        Your secure password vault is now ready. You'll be redirected to your dashboard in a few seconds.
+                    </p>
+                </div>
+                <div class="security-confirmation">
+                    <div class="confirmation-item">
+                        <span class="confirmation-icon">✅</span>
+                        <span>Master password encrypted with PBKDF2</span>
                     </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">🔍</span>
-                        <span>Breach Monitoring</span>
+                    <div class="confirmation-item">
+                        <span class="confirmation-icon">✅</span>
+                        <span>Vault initialized with AES-256 encryption</span>
                     </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">📧</span>
-                        <span>Smart Notifications</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">📊</span>
-                        <span>Security Dashboard</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">🔑</span>
-                        <span>Password Recovery</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">📱</span>
-                        <span>Device Management</span>
+                    <div class="confirmation-item">
+                        <span class="confirmation-icon">✅</span>
+                        <span>Security monitoring activated</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loading-overlay" style="display: none;">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <p>Creating your secure account...</p>
-        </div>
-    </div>
-    
+
     <script>
-        // Form validation and submission
-        document.getElementById('register-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const password = formData.get('password');
-            const confirmPassword = formData.get('confirm_password');
-            const username = formData.get('username');
-            const email = formData.get('email');
-            const phone = formData.get('phone');
-            
-            // Client-side validation
-            if (password !== confirmPassword) {
-                showNotification('Passwords do not match', 'error');
-                return;
+        // Enhanced registration form handler
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('register-form');
+            const passwordInput = document.getElementById('password');
+            const togglePassword = document.getElementById('toggle-password');
+            const strengthIndicator = document.getElementById('password-strength');
+            const strengthFill = document.getElementById('strength-fill');
+            const strengthText = document.getElementById('strength-text');
+            const registerBtn = document.getElementById('register-btn');
+            const registerText = document.getElementById('register-text');
+
+            // Password visibility toggle
+            togglePassword.addEventListener('click', function() {
+                const type = passwordInput.type === 'password' ? 'text' : 'password';
+                passwordInput.type = type;
+                togglePassword.textContent = type === 'password' ? '👁️' : '🙈';
+            });
+
+            // Password strength checker
+            passwordInput.addEventListener('input', function() {
+                const password = this.value;
+                
+                if (password.length > 0) {
+                    strengthIndicator.style.display = 'block';
+                    checkPasswordStrength(password);
+                } else {
+                    strengthIndicator.style.display = 'none';
+                }
+            });
+
+            // Checkbox styling
+            const checkboxes = document.querySelectorAll('.checkbox-item input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const item = this.closest('.checkbox-item');
+                    if (this.checked) {
+                        item.classList.add('checked');
+                    } else {
+                        item.classList.remove('checked');
+                    }
+                });
+                
+                // Initialize checked state
+                if (checkbox.checked) {
+                    checkbox.closest('.checkbox-item').classList.add('checked');
+                }
+            });
+
+            // Form submission
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                await handleRegistration();
+            });
+
+            function checkPasswordStrength(password) {
+                const requirements = [
+                    { id: 'req-length', test: password.length >= 12 },
+                    { id: 'req-upper', test: /[A-Z]/.test(password) },
+                    { id: 'req-lower', test: /[a-z]/.test(password) },
+                    { id: 'req-number', test: /[0-9]/.test(password) },
+                    { id: 'req-symbol', test: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password) }
+                ];
+
+                let score = 0;
+                requirements.forEach(req => {
+                    const element = document.getElementById(req.id);
+                    if (req.test) {
+                        element.classList.add('met');
+                        element.querySelector('.icon').textContent = '✓';
+                        score++;
+                    } else {
+                        element.classList.remove('met');
+                        element.querySelector('.icon').textContent = '○';
+                    }
+                });
+
+                // Update strength bar and text
+                const percentage = (score / 5) * 100;
+                strengthFill.style.width = percentage + '%';
+
+                let strengthClass = 'strength-weak';
+                let strengthLabel = 'Weak';
+                
+                if (score >= 5) {
+                    strengthClass = 'strength-strong';
+                    strengthLabel = 'Strong';
+                } else if (score >= 4) {
+                    strengthClass = 'strength-good';
+                    strengthLabel = 'Good';
+                } else if (score >= 2) {
+                    strengthClass = 'strength-fair';
+                    strengthLabel = 'Fair';
+                }
+
+                strengthFill.className = 'strength-fill ' + strengthClass;
+                strengthText.textContent = strengthLabel + ' (' + score + '/5 requirements met)';
             }
-            
-            if (username.length < 3) {
-                showNotification('Username must be at least 3 characters long', 'error');
-                return;
-            }
-            
-            if (password.length < 12) {
-                showNotification('Password must be at least 12 characters long', 'error');
-                return;
-            }
-            
-            // Email validation (if provided)
-            if (email && !isValidEmail(email)) {
-                showNotification('Please enter a valid email address', 'error');
-                return;
-            }
-            
-            // Phone validation (if provided)  
-            if (phone && !isValidPhone(phone)) {
-                showNotification('Please enter a valid phone number', 'error');
-                return;
-            }
-            
-            showLoadingOverlay(true);
-            
-            try {
-                // Prepare registration data
-                const registrationData = {
-                    username: username,
-                    password: password,
-                    email: email || null,
-                    phone: phone || null,
+
+            async function handleRegistration() {
+                const formData = new FormData(form);
+                const data = {
+                    username: formData.get('username'),
+                    password: formData.get('password'),
+                    email: formData.get('email'),
+                    phone: formData.get('phone'),
                     email_notifications: document.getElementById('email-notifications').checked,
                     security_alerts: document.getElementById('security-alerts').checked,
                     login_notifications: document.getElementById('login-notifications').checked,
                     breach_notifications: document.getElementById('breach-notifications').checked
                 };
-                
-                const response = await fetch('/api/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify(registrationData)
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showNotification('Account created successfully! Redirecting...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 2000);
-                } else {
-                    showNotification(data.message || 'Registration failed', 'error');
+
+                // Basic validation
+                if (!data.username || !data.password) {
+                    showError('Please fill in all required fields');
+                    return;
                 }
-                
-            } catch (error) {
-                showNotification('Network error. Please try again.', 'error');
-                console.error('Registration error:', error);
-            } finally {
-                showLoadingOverlay(false);
+
+                if (data.password.length < 12) {
+                    showError('Password must be at least 12 characters long');
+                    return;
+                }
+
+                // Update button state
+                registerBtn.disabled = true;
+                registerText.textContent = '🔐 Creating Secure Account...';
+
+                try {
+                    const response = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        showSuccessModal();
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 3000);
+                    } else {
+                        showError(result.message);
+                    }
+                } catch (error) {
+                    console.error('Registration error:', error);
+                    showError('Network error. Please check your connection and try again.');
+                } finally {
+                    registerBtn.disabled = false;
+                    registerText.textContent = '🚀 Create Secure Account';
+                }
+            }
+
+            function showError(message) {
+                // Remove existing errors
+                const existingErrors = document.querySelectorAll('.error-message');
+                existingErrors.forEach(error => error.remove());
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.style.cssText = `
+                    background: rgba(255, 71, 87, 0.1);
+                    border: 1px solid rgba(255, 71, 87, 0.3);
+                    color: #ff4757;
+                    padding: 1rem;
+                    border-radius: 8px;
+                    margin: 1rem 0;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                errorDiv.textContent = message;
+
+                form.appendChild(errorDiv);
+
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (errorDiv.parentNode) {
+                        errorDiv.remove();
+                    }
+                }, 5000);
+            }
+
+            function showSuccessModal() {
+                document.getElementById('success-modal').style.display = 'flex';
             }
         });
-        
-        // Password strength checker
-        document.getElementById('password').addEventListener('input', function() {
-            const password = this.value;
-            if (password.length > 0) {
-                checkPasswordStrength(password);
-            } else {
-                document.getElementById('password-strength').style.display = 'none';
-            }
-        });
-        
-        function checkPasswordStrength(password) {
-            const strengthIndicator = document.getElementById('password-strength');
-            const strengthFill = document.getElementById('strength-fill');
-            const strengthText = document.getElementById('strength-text');
-            
-            let score = 0;
-            let feedback = [];
-            
-            // Length check
-            if (password.length >= 12) score += 25;
-            else feedback.push('Use at least 12 characters');
-            
-            // Character variety checks
-            if (/[a-z]/.test(password)) score += 20;
-            else feedback.push('Add lowercase letters');
-            
-            if (/[A-Z]/.test(password)) score += 20;
-            else feedback.push('Add uppercase letters');
-            
-            if (/[0-9]/.test(password)) score += 20;
-            else feedback.push('Add numbers');
-            
-            if (/[^a-zA-Z0-9]/.test(password)) score += 15;
-            else feedback.push('Add symbols');
-            
-            // Determine strength level
-            let strengthClass = 'weak';
-            let strengthLabel = 'Weak';
-            
-            if (score >= 85) {
-                strengthClass = 'excellent';
-                strengthLabel = 'Excellent';
-            } else if (score >= 70) {
-                strengthClass = 'strong';
-                strengthLabel = 'Strong';
-            } else if (score >= 50) {
-                strengthClass = 'good';
-                strengthLabel = 'Good';
-            } else if (score >= 30) {
-                strengthClass = 'fair';
-                strengthLabel = 'Fair';
-            }
-            
-            // Update UI
-            strengthIndicator.style.display = 'block';
-            strengthFill.style.width = score + '%';
-            strengthFill.className = `strength-fill ${strengthClass}`;
-            strengthText.textContent = `${strengthLabel} (${score}%)${feedback.length > 0 ? ' - ' + feedback.join(', ') : ''}`;
-        }
-        
-        // Utility functions
-        function isValidEmail(email) {
-            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        }
-        
-        function isValidPhone(phone) {
-            const cleanPhone = phone.replace(/\D/g, '');
-            return cleanPhone.length >= 10 && cleanPhone.length <= 15;
-        }
-        
-        function showLoadingOverlay(show) {
-            document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
-            document.getElementById('register-btn').disabled = show;
-        }
-        
-        function showNotification(message, type) {
-            // Remove existing notifications
-            const existing = document.querySelectorAll('.notification');
-            existing.forEach(n => n.remove());
-            
-            const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            
-            const colors = {
-                success: '#2ed573',
-                error: '#ff4757',
-                warning: '#ffa502',
-                info: '#3742fa'
-            };
-            
-            notification.style.cssText = `
+
+        // Additional CSS for modal and animations
+        const additionalCSS = `
+            .modal {
                 position: fixed;
-                top: 20px;
-                right: 20px;
-                background: ${colors[type] || colors.info};
-                color: white;
-                padding: 1rem 1.5rem;
-                border-radius: 8px;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                justify-content: center;
+                align-items: center;
                 z-index: 10000;
-                font-weight: 600;
-                max-width: 400px;
-                word-wrap: break-word;
-                animation: slideIn 0.3s ease-out;
-            `;
-            
-            notification.textContent = message;
-            document.body.appendChild(notification);
-            
-            // Auto remove after 4 seconds
-            setTimeout(() => {
-                notification.remove();
-            }, 4000);
-            
-            // Click to dismiss
-            notification.addEventListener('click', () => {
-                notification.remove();
-            });
-        }
-        
-        // CSS animations
-        const style = document.createElement('style');
-        style.textContent = `
+                animation: fadeIn 0.3s ease-out;
+            }
+
+            .success-modal {
+                background: var(--card-bg);
+                border-radius: 16px;
+                padding: 2rem;
+                max-width: 500px;
+                width: 90%;
+                border: 1px solid var(--glass-border);
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                animation: slideUp 0.4s ease-out;
+            }
+
+            .modal-header h3 {
+                margin: 0;
+                color: var(--text-primary);
+                text-align: center;
+            }
+
+            .security-confirmation {
+                background: rgba(46, 213, 115, 0.1);
+                border: 1px solid rgba(46, 213, 115, 0.3);
+                border-radius: 10px;
+                padding: 1.5rem;
+                margin-top: 1.5rem;
+            }
+
+            .confirmation-item {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-bottom: 0.75rem;
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }
+
+            .confirmation-item:last-child {
+                margin-bottom: 0;
+            }
+
+            .confirmation-icon {
+                color: var(--accent-green);
+                font-weight: bold;
+            }
+
+            .password-toggle {
+                position: absolute;
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                background: none;
+                border: none;
+                cursor: pointer;
+                font-size: 1rem;
+                padding: 0.25rem;
+                border-radius: 4px;
+                transition: background 0.3s ease;
+            }
+
+            .password-toggle:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+
+            @keyframes slideUp {
+                from { 
+                    opacity: 0; 
+                    transform: translateY(50px) scale(0.9); 
+                }
+                to { 
+                    opacity: 1; 
+                    transform: translateY(0) scale(1); 
+                }
+            }
+
             @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
+                from { 
+                    opacity: 0; 
+                    transform: translateX(-20px); 
+                }
+                to { 
+                    opacity: 1; 
+                    transform: translateX(0); 
+                }
+            }
+
+            .field-feedback {
+                font-size: 0.8rem;
+                margin-top: 0.5rem;
+                min-height: 1rem;
+            }
+
+            .field-feedback.error {
+                color: #ff4757;
+            }
+
+            .field-feedback.success {
+                color: var(--accent-green);
             }
         `;
+
+        // Inject additional CSS
+        const style = document.createElement('style');
+        style.textContent = additionalCSS;
         document.head.appendChild(style);
     </script>
 </body>
