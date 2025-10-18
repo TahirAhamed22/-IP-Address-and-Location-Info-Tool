@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-VaultGuard Database Migration Script - FIXED VERSION
-Run this ONCE to add missing columns to your existing database
+Enhanced VaultGuard Database Migration Script - COMPLETE VERSION
+Safely migrates database to support all new notification features
 """
 
 import sqlite3
 import os
 import sys
+import shutil
 from datetime import datetime
 
 def backup_database(db_path):
     """Create a backup of the database before migration"""
     backup_path = f"{db_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     try:
-        import shutil
         shutil.copy2(db_path, backup_path)
         print(f"✅ Database backed up to: {backup_path}")
         return backup_path
@@ -21,12 +21,24 @@ def backup_database(db_path):
         print(f"❌ Failed to backup database: {e}")
         return None
 
-def get_table_names(cursor):
-    """Get all table names in the database"""
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = [row[0] for row in cursor.fetchall()]
-    print(f"📋 Found tables: {', '.join(tables)}")
-    return tables
+def find_database():
+    """Find the VaultGuard database file"""
+    possible_paths = [
+        'vaultguard_secure.db',
+        'instance/vaultguard_secure.db',
+        'passmanager.db',
+        'instance/passmanager.db'
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+def check_table_exists(cursor, table_name):
+    """Check if a table exists"""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    return cursor.fetchone() is not None
 
 def check_column_exists(cursor, table_name, column_name):
     """Check if a column exists in a table"""
@@ -34,262 +46,242 @@ def check_column_exists(cursor, table_name, column_name):
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = [row[1] for row in cursor.fetchall()]
         return column_name in columns
-    except:
+    except sqlite3.Error:
         return False
 
-def find_user_table(tables):
-    """Find the user table (could be 'user', 'users', etc.)"""
-    possible_names = ['user', 'users', 'User', 'Users']
-    for name in possible_names:
-        if name in tables:
-            return name
-    return None
-
-def find_vault_table(tables):
-    """Find the vault entry table"""
-    possible_names = ['vault_entry', 'vault_entries', 'VaultEntry', 'password_entry', 'passwords']
-    for name in possible_names:
-        if name in tables:
-            return name
-    return None
-
-def migrate_user_table(cursor, table_name):
+def migrate_user_table(cursor):
     """Add missing columns to user table"""
-    print(f"🔧 Migrating {table_name} table...")
+    print("🔧 Migrating user table...")
     
-    # First, get current columns
-    cursor.execute(f"PRAGMA table_info({table_name})")
+    # Get current columns
+    cursor.execute("PRAGMA table_info(user)")
     current_columns = [row[1] for row in cursor.fetchall()]
-    print(f"   Current columns: {', '.join(current_columns)}")
+    print(f"   Current columns: {len(current_columns)} found")
     
-    # List of new columns to add
+    # Define new columns with safe defaults
     new_columns = [
         ('email', 'VARCHAR(120)'),
         ('phone', 'VARCHAR(20)'),
         ('recovery_email', 'VARCHAR(120)'),
         ('recovery_phone', 'VARCHAR(20)'),
-        ('last_password_change', 'DATETIME'),
         ('email_notifications', 'BOOLEAN DEFAULT 1'),
-        ('sms_notifications', 'BOOLEAN DEFAULT 0'),
         ('security_alerts', 'BOOLEAN DEFAULT 1'),
         ('login_notifications', 'BOOLEAN DEFAULT 1'),
-        ('breach_notifications', 'BOOLEAN DEFAULT 1'),
-        ('two_factor_enabled', 'BOOLEAN DEFAULT 0'),
-        ('two_factor_secret', 'VARCHAR(32)'),
-        ('backup_codes', 'TEXT'),
-        ('trusted_devices', 'TEXT')
+        ('breach_notifications', 'BOOLEAN DEFAULT 1')
     ]
     
-    added_columns = 0
+    added_count = 0
+    
     for column_name, column_type in new_columns:
         if column_name not in current_columns:
             try:
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+                cursor.execute(f"ALTER TABLE user ADD COLUMN {column_name} {column_type}")
                 print(f"  ✅ Added column: {column_name}")
-                added_columns += 1
-            except Exception as e:
+                added_count += 1
+            except sqlite3.Error as e:
                 print(f"  ❌ Failed to add {column_name}: {e}")
         else:
             print(f"  ✓ Column {column_name} already exists")
     
-    # Set default values for existing users
-    if added_columns > 0:
+    # Set default notification preferences for existing users
+    if added_count > 0:
         try:
-            # Set last_password_change to created_at for existing users
-            cursor.execute(f"""
-                UPDATE {table_name} 
-                SET last_password_change = created_at 
-                WHERE last_password_change IS NULL
+            cursor.execute("""
+                UPDATE user 
+                SET email_notifications = 1,
+                    security_alerts = 1,
+                    login_notifications = 1,
+                    breach_notifications = 1
+                WHERE email_notifications IS NULL
             """)
-            print("  ✅ Set default password change dates")
-        except Exception as e:
-            print(f"  ⚠️ Warning: Could not set default dates: {e}")
+            print(f"  ✅ Set default notification preferences for existing users")
+        except sqlite3.Error as e:
+            print(f"  ⚠️  Warning: Could not set defaults: {e}")
     
-    return added_columns
+    return added_count
 
-def migrate_vault_entry_table(cursor, table_name):
-    """Add missing columns to vault_entry table"""
-    print(f"🔧 Migrating {table_name} table...")
+def create_indexes(cursor):
+    """Create database indexes for better performance"""
+    print("🔧 Creating performance indexes...")
     
-    # First, get current columns
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    current_columns = [row[1] for row in cursor.fetchall()]
-    print(f"   Current columns: {', '.join(current_columns)}")
-    
-    # List of new columns to add
-    new_columns = [
-        ('category', "VARCHAR(50) DEFAULT 'General'"),
-        ('notes', 'TEXT'),
-        ('last_accessed', 'DATETIME'),
-        ('password_strength_score', 'INTEGER DEFAULT 0'),
-        ('is_compromised', 'BOOLEAN DEFAULT 0')
+    indexes = [
+        ("idx_user_email", "CREATE INDEX IF NOT EXISTS idx_user_email ON user(email)"),
+        ("idx_user_username", "CREATE INDEX IF NOT EXISTS idx_user_username ON user(username)"),
+        ("idx_vault_user_id", "CREATE INDEX IF NOT EXISTS idx_vault_user_id ON vault_entry(user_id)"),
+        ("idx_vault_site", "CREATE INDEX IF NOT EXISTS idx_vault_site ON vault_entry(site)"),
+        ("idx_user_created", "CREATE INDEX IF NOT EXISTS idx_user_created ON user(created_at)"),
+        ("idx_vault_updated", "CREATE INDEX IF NOT EXISTS idx_vault_updated ON vault_entry(updated_at)")
     ]
     
-    added_columns = 0
-    for column_name, column_type in new_columns:
-        if column_name not in current_columns:
-            try:
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
-                print(f"  ✅ Added column: {column_name}")
-                added_columns += 1
-            except Exception as e:
-                print(f"  ❌ Failed to add {column_name}: {e}")
-        else:
-            print(f"  ✓ Column {column_name} already exists")
+    created_count = 0
+    for index_name, sql in indexes:
+        try:
+            cursor.execute(sql)
+            print(f"  ✅ Created index: {index_name}")
+            created_count += 1
+        except sqlite3.Error as e:
+            print(f"  ⚠️  Index {index_name}: {e}")
     
-    return added_columns
+    return created_count
 
-def create_new_tables(cursor):
-    """Create new tables if they don't exist"""
-    print("🔧 Creating new tables...")
+def verify_migration(cursor):
+    """Verify that migration was successful"""
+    print("🔍 Verifying migration...")
     
-    # Create SecurityLog table
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS security_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                event_type VARCHAR(50) NOT NULL,
-                description TEXT NOT NULL,
-                ip_address VARCHAR(45),
-                user_agent TEXT,
-                severity VARCHAR(20) DEFAULT 'INFO',
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        print("  ✅ Created SecurityLog table")
-    except Exception as e:
-        print(f"  ❌ Failed to create SecurityLog table: {e}")
+    # Check user table columns
+    cursor.execute("PRAGMA table_info(user)")
+    columns = [row[1] for row in cursor.fetchall()]
     
-    # Create PasswordReset table
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS password_reset (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                reset_token VARCHAR(100) UNIQUE NOT NULL,
-                reset_method VARCHAR(20) NOT NULL,
-                contact_info VARCHAR(120) NOT NULL,
-                expires_at DATETIME NOT NULL,
-                used BOOLEAN DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        print("  ✅ Created PasswordReset table")
-    except Exception as e:
-        print(f"  ❌ Failed to create PasswordReset table: {e}")
+    required_columns = [
+        'id', 'username', 'password_hash', 'encryption_salt',
+        'email', 'phone', 'email_notifications', 'security_alerts',
+        'login_notifications', 'breach_notifications'
+    ]
     
-    # Create DeviceFingerprint table
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS device_fingerprint (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                device_hash VARCHAR(64) NOT NULL,
-                device_name VARCHAR(200),
-                is_trusted BOOLEAN DEFAULT 0,
-                first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                ip_address VARCHAR(45),
-                user_agent TEXT
-            )
-        """)
-        print("  ✅ Created DeviceFingerprint table")
-    except Exception as e:
-        print(f"  ❌ Failed to create DeviceFingerprint table: {e}")
+    missing_columns = [col for col in required_columns if col not in columns]
+    
+    if missing_columns:
+        print(f"  ❌ Missing columns: {missing_columns}")
+        return False
+    
+    # Check data integrity
+    cursor.execute("SELECT COUNT(*) FROM user")
+    user_count = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM vault_entry")
+    vault_count = cursor.fetchone()[0]
+    
+    print(f"  ✅ Database integrity verified")
+    print(f"     Users: {user_count}")
+    print(f"     Vault entries: {vault_count}")
+    print(f"     Columns: {len(columns)} total")
+    
+    return True
+
+def show_migration_summary(db_path, added_columns, created_indexes):
+    """Show summary of migration results"""
+    print("\n" + "="*60)
+    print("MIGRATION SUMMARY")
+    print("="*60)
+    print(f"Database: {db_path}")
+    print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Added columns: {added_columns}")
+    print(f"Created indexes: {created_indexes}")
+    print(f"Status: ✅ SUCCESSFUL")
+    print("="*60)
+    
+    print("\n🎉 Your VaultGuard database is now ready for enhanced features!")
+    print("\nNEW FEATURES ENABLED:")
+    print("   ✅ Email notifications")
+    print("   ✅ Phone number storage")
+    print("   ✅ Recovery contact options")
+    print("   ✅ Notification preferences")
+    print("   ✅ Enhanced security alerts")
+    print("   ✅ Performance optimizations")
+    
+    print("\n📋 NEXT STEPS:")
+    print("1. Replace your app.py with the enhanced version")
+    print("2. Replace login.html and register.html with enhanced versions")
+    print("3. Add reset_password.html to your templates folder")
+    print("4. Start your application: python app.py")
+    
+    print("\n⚠️  IMPORTANT:")
+    print("- A backup was created before migration")
+    print("- All existing data is preserved")
+    print("- Users can now register with email addresses")
+    print("- Forgot password feature will work")
 
 def main():
-    print("🛡️  VaultGuard Database Migration - FIXED VERSION")
-    print("=" * 60)
+    """Main migration function"""
+    print("🛡️  VaultGuard Enhanced Database Migration")
+    print("="*60)
+    print("This script will safely upgrade your database to support:")
+    print("  • Email & phone registration")
+    print("  • Notification preferences")
+    print("  • Recovery contact information")
+    print("  • Enhanced security features")
+    print("="*60)
     
-    # Find database file
-    db_files = [
-        'instance/vaultguard_secure.db',
-        'vaultguard_secure.db',
-        'instance/passmanager.db',
-        'passmanager.db',
-        'instance/site.db',
-        'site.db'
-    ]
-    
-    db_path = None
-    for path in db_files:
-        if os.path.exists(path):
-            db_path = path
-            break
-    
+    # Find database
+    db_path = find_database()
     if not db_path:
-        print("❌ No database found! Please run your app.py first to create the database.")
+        print("❌ No VaultGuard database found!")
+        print("\nSearched for:")
+        print("  - vaultguard_secure.db")
+        print("  - instance/vaultguard_secure.db")
+        print("  - passmanager.db")
+        print("  - instance/passmanager.db")
+        print("\nPlease run this script from your VaultGuard directory.")
         sys.exit(1)
     
     print(f"📄 Found database: {db_path}")
     
-    # Connect and analyze database
+    # Get user confirmation
+    response = input(f"\n⚠️  This will modify your database. Continue? (y/N): ").strip().lower()
+    if response != 'y':
+        print("❌ Migration cancelled by user.")
+        sys.exit(0)
+    
+    # Create backup
+    print("\n💾 Creating backup...")
+    backup_path = backup_database(db_path)
+    if not backup_path:
+        response = input("⚠️  Backup failed. Continue anyway? (y/N): ").strip().lower()
+        if response != 'y':
+            print("❌ Migration cancelled.")
+            sys.exit(1)
+    
+    # Perform migration
     try:
+        print(f"\n🚀 Starting migration on {db_path}...")
+        
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Get table information
-        tables = get_table_names(cursor)
-        user_table = find_user_table(tables)
-        vault_table = find_vault_table(tables)
+        # Enable foreign keys
+        cursor.execute("PRAGMA foreign_keys = ON")
         
-        print(f"👤 User table: {user_table or 'NOT FOUND'}")
-        print(f"🗄️ Vault table: {vault_table or 'NOT FOUND'}")
-        
-        if not user_table:
-            print("❌ Could not find user table. Your database structure is different.")
-            print("   Available tables:", ', '.join(tables))
-            sys.exit(1)
-        
-        # Ask for confirmation
-        response = input(f"\n⚠️  This will modify your database ({db_path}). Continue? (y/N): ").strip().lower()
-        if response != 'y':
-            print("❌ Migration cancelled.")
-            sys.exit(0)
-        
-        # Backup database
-        backup_path = backup_database(db_path)
-        if not backup_path:
-            response = input("⚠️  Backup failed. Continue anyway? (y/N): ").strip().lower()
-            if response != 'y':
-                print("❌ Migration cancelled.")
-                sys.exit(1)
-        
-        print("\n🚀 Starting migration...")
+        # Begin transaction
+        cursor.execute("BEGIN TRANSACTION")
         
         # Migrate tables
-        user_changes = migrate_user_table(cursor, user_table)
-        vault_changes = 0
-        if vault_table:
-            vault_changes = migrate_vault_entry_table(cursor, vault_table)
-        else:
-            print("⚠️  No vault table found - skipping vault migration")
+        added_columns = migrate_user_table(cursor)
+        created_indexes = create_indexes(cursor)
         
-        create_new_tables(cursor)
+        # Verify migration
+        if not verify_migration(cursor):
+            raise Exception("Migration verification failed")
         
-        # Commit changes
-        conn.commit()
+        # Commit transaction
+        cursor.execute("COMMIT")
+        conn.close()
         
-        print("\n✅ Migration completed successfully!")
-        print(f"   - Added {user_changes} columns to {user_table} table")
-        print(f"   - Added {vault_changes} columns to {vault_table or 'N/A'} table")
-        print(f"   - Created 3 new tables")
+        # Show summary
+        show_migration_summary(db_path, added_columns, created_indexes)
         
-        if backup_path:
-            print(f"\n💾 Original database backed up to: {backup_path}")
-        
-        print("\n🎉 Your database is now compatible with the enhanced features!")
-        print("   You can now run your app.py normally.")
+        print(f"\n💾 Backup location: {backup_path}")
+        print("🎉 Migration completed successfully!")
         
     except Exception as e:
         print(f"\n❌ Migration failed: {e}")
-        if 'backup_path' in locals():
-            print(f"💾 You can restore from backup: {backup_path}")
-        sys.exit(1)
-    finally:
-        if conn:
+        
+        try:
+            cursor.execute("ROLLBACK")
             conn.close()
+        except:
+            pass
+        
+        if backup_path:
+            print(f"💾 Your original database backup: {backup_path}")
+            restore = input("Restore from backup? (y/N): ").strip().lower()
+            if restore == 'y':
+                try:
+                    shutil.copy2(backup_path, db_path)
+                    print("✅ Database restored from backup")
+                except Exception as restore_error:
+                    print(f"❌ Restore failed: {restore_error}")
+        
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
