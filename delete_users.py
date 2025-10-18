@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Delete Fake/Test Users from VaultGuard Database
-Removes test users and their associated vault entries
+Enhanced VaultGuard User Management Tool
+Complete user deletion with proper cleanup and session invalidation
 """
-import sqlite3
 import os
 import sys
+import sqlite3
 from datetime import datetime
+from sqlalchemy import text
 
 # Database configuration
 DB_FILE = 'vaultguard_secure.db'
 
 def get_db_connection():
-    """Get database connection"""
+    """Get database connection with proper error handling"""
     if not os.path.exists(DB_FILE):
         print(f"❌ Database file '{DB_FILE}' not found!")
         print(f"Make sure you're running this script from the same directory as your app.py")
@@ -27,7 +28,7 @@ def get_db_connection():
         return None
 
 def list_all_users():
-    """List all users in the database"""
+    """List all users with enhanced information"""
     conn = get_db_connection()
     if not conn:
         return []
@@ -35,13 +36,20 @@ def list_all_users():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT u.id, u.username, u.created_at, 
+            SELECT u.id, u.username, u.email, u.created_at, 
                    COUNT(v.id) as password_count,
                    u.last_login,
-                   u.failed_login_attempts
+                   u.failed_login_attempts,
+                   u.account_locked_until,
+                   CASE 
+                     WHEN u.account_locked_until IS NOT NULL AND 
+                          datetime(u.account_locked_until) > datetime('now') 
+                     THEN 'LOCKED' 
+                     ELSE 'ACTIVE' 
+                   END as status
             FROM user u
             LEFT JOIN vault_entry v ON u.id = v.user_id
-            GROUP BY u.id, u.username, u.created_at, u.last_login, u.failed_login_attempts
+            GROUP BY u.id, u.username, u.email, u.created_at, u.last_login, u.failed_login_attempts, u.account_locked_until
             ORDER BY u.created_at DESC
         """)
         
@@ -54,8 +62,8 @@ def list_all_users():
         conn.close()
         return []
 
-def delete_user_by_id(user_id):
-    """Delete a user and all their vault entries by ID"""
+def delete_user_completely(user_id):
+    """Completely delete a user and all associated data"""
     conn = get_db_connection()
     if not conn:
         return False
@@ -63,8 +71,8 @@ def delete_user_by_id(user_id):
     try:
         cursor = conn.cursor()
         
-        # First, get user info for confirmation
-        cursor.execute("SELECT username FROM user WHERE id = ?", (user_id,))
+        # Get user info for confirmation
+        cursor.execute("SELECT username, email FROM user WHERE id = ?", (user_id,))
         user = cursor.fetchone()
         
         if not user:
@@ -72,28 +80,71 @@ def delete_user_by_id(user_id):
             conn.close()
             return False
         
-        # Delete vault entries first (due to foreign key constraint)
+        print(f"\n🗑️  Preparing to DELETE user: {user['username']}")
+        if user['email']:
+            print(f"    Email: {user['email']}")
+        
+        # Count associated data
+        cursor.execute("SELECT COUNT(*) as count FROM vault_entry WHERE user_id = ?", (user_id,))
+        vault_count = cursor.fetchone()['count']
+        
+        print(f"    Vault entries: {vault_count}")
+        
+        # Confirm deletion
+        confirm = input(f"\n⚠️  Are you sure you want to PERMANENTLY delete this user? (yes/no): ").lower().strip()
+        if confirm not in ['yes', 'y']:
+            print("❌ Deletion cancelled")
+            conn.close()
+            return False
+        
+        # Start transaction
+        cursor.execute("BEGIN TRANSACTION")
+        
+        # Delete vault entries first (foreign key constraint)
         cursor.execute("DELETE FROM vault_entry WHERE user_id = ?", (user_id,))
-        deleted_passwords = cursor.rowcount
+        deleted_vault = cursor.rowcount
+        
+        # Delete any security logs if they exist
+        try:
+            cursor.execute("DELETE FROM security_log WHERE user_id = ?", (user_id,))
+        except sqlite3.Error:
+            pass  # Table might not exist
+        
+        # Delete any device fingerprints if they exist
+        try:
+            cursor.execute("DELETE FROM device_fingerprint WHERE user_id = ?", (user_id,))
+        except sqlite3.Error:
+            pass  # Table might not exist
+        
+        # Delete any password reset tokens if they exist
+        try:
+            cursor.execute("DELETE FROM password_reset WHERE user_id = ?", (user_id,))
+        except sqlite3.Error:
+            pass  # Table might not exist
         
         # Delete the user
         cursor.execute("DELETE FROM user WHERE id = ?", (user_id,))
         deleted_users = cursor.rowcount
         
         if deleted_users > 0:
-            conn.commit()
+            cursor.execute("COMMIT")
             print(f"✅ Successfully deleted user '{user['username']}'")
-            print(f"   🗑️  Removed {deleted_passwords} stored passwords")
+            print(f"   🗑️  Removed {deleted_vault} vault entries")
+            print(f"   🧹 Cleaned up all associated data")
             conn.close()
             return True
         else:
+            cursor.execute("ROLLBACK")
             print(f"❌ Failed to delete user with ID {user_id}")
             conn.close()
             return False
             
     except sqlite3.Error as e:
         print(f"❌ Error deleting user: {e}")
-        conn.rollback()
+        try:
+            cursor.execute("ROLLBACK")
+        except:
+            pass
         conn.close()
         return False
 
@@ -108,9 +159,12 @@ def delete_users_by_pattern(pattern):
         
         # Find matching users
         cursor.execute("""
-            SELECT id, username FROM user 
-            WHERE username LIKE ? 
-            ORDER BY username
+            SELECT u.id, u.username, u.email, COUNT(v.id) as vault_count
+            FROM user u
+            LEFT JOIN vault_entry v ON u.id = v.user_id
+            WHERE u.username LIKE ? 
+            GROUP BY u.id, u.username, u.email
+            ORDER BY u.username
         """, (f'%{pattern}%',))
         
         matching_users = cursor.fetchall()
@@ -120,9 +174,14 @@ def delete_users_by_pattern(pattern):
             conn.close()
             return 0
         
-        print(f"Found {len(matching_users)} users matching pattern '{pattern}':")
+        print(f"🔍 Found {len(matching_users)} users matching pattern '{pattern}':")
+        total_vault_entries = 0
         for user in matching_users:
-            print(f"  - {user['username']} (ID: {user['id']})")
+            email_info = f" ({user['email']})" if user['email'] else ""
+            print(f"  - {user['username']}{email_info} - {user['vault_count']} passwords")
+            total_vault_entries += user['vault_count']
+        
+        print(f"\n📊 Total: {len(matching_users)} users, {total_vault_entries} vault entries")
         
         # Confirm deletion
         confirm = input(f"\n⚠️  Are you sure you want to delete these {len(matching_users)} users? (yes/no): ").lower().strip()
@@ -135,23 +194,34 @@ def delete_users_by_pattern(pattern):
         deleted_count = 0
         total_passwords = 0
         
-        for user in matching_users:
-            # Count passwords for this user
-            cursor.execute("SELECT COUNT(*) as count FROM vault_entry WHERE user_id = ?", (user['id'],))
-            password_count = cursor.fetchone()['count']
-            total_passwords += password_count
-            
-            # Delete vault entries
-            cursor.execute("DELETE FROM vault_entry WHERE user_id = ?", (user['id'],))
-            
-            # Delete user
-            cursor.execute("DELETE FROM user WHERE id = ?", (user['id'],))
-            
-            if cursor.rowcount > 0:
-                deleted_count += 1
-                print(f"✅ Deleted user '{user['username']}' and {password_count} passwords")
+        cursor.execute("BEGIN TRANSACTION")
         
-        conn.commit()
+        for user in matching_users:
+            try:
+                # Delete vault entries
+                cursor.execute("DELETE FROM vault_entry WHERE user_id = ?", (user['id'],))
+                vault_deleted = cursor.rowcount
+                
+                # Clean up other associated data
+                try:
+                    cursor.execute("DELETE FROM security_log WHERE user_id = ?", (user['id'],))
+                    cursor.execute("DELETE FROM device_fingerprint WHERE user_id = ?", (user['id'],))
+                    cursor.execute("DELETE FROM password_reset WHERE user_id = ?", (user['id'],))
+                except sqlite3.Error:
+                    pass  # Tables might not exist
+                
+                # Delete user
+                cursor.execute("DELETE FROM user WHERE id = ?", (user['id'],))
+                
+                if cursor.rowcount > 0:
+                    deleted_count += 1
+                    total_passwords += vault_deleted
+                    print(f"✅ Deleted user '{user['username']}' and {vault_deleted} passwords")
+                    
+            except sqlite3.Error as e:
+                print(f"❌ Failed to delete user '{user['username']}': {e}")
+        
+        cursor.execute("COMMIT")
         conn.close()
         
         print(f"\n🎉 Successfully deleted {deleted_count} users and {total_passwords} total passwords")
@@ -159,7 +229,10 @@ def delete_users_by_pattern(pattern):
         
     except sqlite3.Error as e:
         print(f"❌ Error deleting users: {e}")
-        conn.rollback()
+        try:
+            cursor.execute("ROLLBACK")
+        except:
+            pass
         conn.close()
         return 0
 
@@ -172,26 +245,35 @@ def delete_inactive_users(days=30):
     try:
         cursor = conn.cursor()
         
-        # Find inactive users (never logged in or no login in X days)
+        # Find inactive users
         cursor.execute("""
-            SELECT id, username, created_at, last_login 
-            FROM user 
-            WHERE last_login IS NULL 
-               OR datetime(last_login) < datetime('now', '-{} days')
-            ORDER BY created_at
-        """.format(days))
+            SELECT u.id, u.username, u.email, u.created_at, u.last_login,
+                   COUNT(v.id) as vault_count
+            FROM user u
+            LEFT JOIN vault_entry v ON u.id = v.user_id
+            WHERE (u.last_login IS NULL AND date(u.created_at) < date('now', '-{} days'))
+               OR (u.last_login IS NOT NULL AND date(u.last_login) < date('now', '-{} days'))
+            GROUP BY u.id, u.username, u.email, u.created_at, u.last_login
+            ORDER BY u.created_at
+        """.format(days, days))
         
         inactive_users = cursor.fetchall()
         
         if not inactive_users:
-            print(f"❌ No inactive users found (inactive = no login in {days} days)")
+            print(f"❌ No inactive users found (inactive = no activity in {days} days)")
             conn.close()
             return 0
         
-        print(f"Found {len(inactive_users)} inactive users (no login in {days} days):")
+        print(f"⏰ Found {len(inactive_users)} inactive users (no activity in {days} days):")
+        total_vault_entries = 0
         for user in inactive_users:
-            last_login = user['last_login'] if user['last_login'] else 'Never'
-            print(f"  - {user['username']} (Created: {user['created_at']}, Last login: {last_login})")
+            last_activity = user['last_login'] if user['last_login'] else user['created_at']
+            email_info = f" ({user['email']})" if user['email'] else ""
+            print(f"  - {user['username']}{email_info}")
+            print(f"    Last activity: {last_activity[:10]} | Passwords: {user['vault_count']}")
+            total_vault_entries += user['vault_count']
+        
+        print(f"\n📊 Total: {len(inactive_users)} users, {total_vault_entries} vault entries")
         
         # Confirm deletion
         confirm = input(f"\n⚠️  Delete these {len(inactive_users)} inactive users? (yes/no): ").lower().strip()
@@ -204,23 +286,34 @@ def delete_inactive_users(days=30):
         deleted_count = 0
         total_passwords = 0
         
-        for user in inactive_users:
-            # Count passwords for this user
-            cursor.execute("SELECT COUNT(*) as count FROM vault_entry WHERE user_id = ?", (user['id'],))
-            password_count = cursor.fetchone()['count']
-            total_passwords += password_count
-            
-            # Delete vault entries
-            cursor.execute("DELETE FROM vault_entry WHERE user_id = ?", (user['id'],))
-            
-            # Delete user
-            cursor.execute("DELETE FROM user WHERE id = ?", (user['id'],))
-            
-            if cursor.rowcount > 0:
-                deleted_count += 1
-                print(f"✅ Deleted inactive user '{user['username']}' and {password_count} passwords")
+        cursor.execute("BEGIN TRANSACTION")
         
-        conn.commit()
+        for user in inactive_users:
+            try:
+                # Delete vault entries
+                cursor.execute("DELETE FROM vault_entry WHERE user_id = ?", (user['id'],))
+                vault_deleted = cursor.rowcount
+                
+                # Clean up associated data
+                try:
+                    cursor.execute("DELETE FROM security_log WHERE user_id = ?", (user['id'],))
+                    cursor.execute("DELETE FROM device_fingerprint WHERE user_id = ?", (user['id'],))
+                    cursor.execute("DELETE FROM password_reset WHERE user_id = ?", (user['id'],))
+                except sqlite3.Error:
+                    pass
+                
+                # Delete user
+                cursor.execute("DELETE FROM user WHERE id = ?", (user['id'],))
+                
+                if cursor.rowcount > 0:
+                    deleted_count += 1
+                    total_passwords += vault_deleted
+                    print(f"✅ Deleted inactive user '{user['username']}' and {vault_deleted} passwords")
+                    
+            except sqlite3.Error as e:
+                print(f"❌ Failed to delete user '{user['username']}': {e}")
+        
+        cursor.execute("COMMIT")
         conn.close()
         
         print(f"\n🎉 Successfully deleted {deleted_count} inactive users and {total_passwords} total passwords")
@@ -228,12 +321,15 @@ def delete_inactive_users(days=30):
         
     except sqlite3.Error as e:
         print(f"❌ Error deleting inactive users: {e}")
-        conn.rollback()
+        try:
+            cursor.execute("ROLLBACK")
+        except:
+            pass
         conn.close()
         return 0
 
-def delete_all_users():
-    """Delete ALL users (DANGEROUS - for complete reset only)"""
+def reset_database():
+    """DANGEROUS: Delete ALL users and vault entries"""
     conn = get_db_connection()
     if not conn:
         return 0
@@ -241,7 +337,7 @@ def delete_all_users():
     try:
         cursor = conn.cursor()
         
-        # Count total users and passwords
+        # Count everything first
         cursor.execute("SELECT COUNT(*) as count FROM user")
         total_users = cursor.fetchone()['count']
         
@@ -253,8 +349,9 @@ def delete_all_users():
             conn.close()
             return 0
         
-        print(f"⚠️  DANGER: This will delete ALL {total_users} users and {total_passwords} passwords!")
+        print(f"💥 DANGER: This will delete ALL {total_users} users and {total_passwords} passwords!")
         print("This action is IRREVERSIBLE and will completely reset the database!")
+        print("\n🔥 ALL DATA WILL BE PERMANENTLY LOST! 🔥")
         
         confirm1 = input("\nType 'DELETE ALL USERS' to confirm: ").strip()
         if confirm1 != 'DELETE ALL USERS':
@@ -268,36 +365,49 @@ def delete_all_users():
             conn.close()
             return 0
         
+        cursor.execute("BEGIN TRANSACTION")
+        
         # Delete all vault entries first
         cursor.execute("DELETE FROM vault_entry")
         deleted_passwords = cursor.rowcount
+        
+        # Delete all associated data
+        try:
+            cursor.execute("DELETE FROM security_log")
+            cursor.execute("DELETE FROM device_fingerprint")
+            cursor.execute("DELETE FROM password_reset")
+        except sqlite3.Error:
+            pass  # Tables might not exist
         
         # Delete all users
         cursor.execute("DELETE FROM user")
         deleted_users = cursor.rowcount
         
         # Reset auto-increment counters
-        cursor.execute("DELETE FROM sqlite_sequence WHERE name='user'")
-        cursor.execute("DELETE FROM sqlite_sequence WHERE name='vault_entry'")
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('user', 'vault_entry', 'security_log', 'device_fingerprint', 'password_reset')")
         
-        conn.commit()
+        cursor.execute("COMMIT")
         conn.close()
         
         print(f"\n💥 DATABASE RESET COMPLETE!")
         print(f"   👥 Deleted {deleted_users} users")
         print(f"   🔑 Deleted {deleted_passwords} passwords")
         print(f"   🗃️  Reset auto-increment counters")
+        print(f"   🧹 Cleaned up all associated data")
         
         return deleted_users
         
     except sqlite3.Error as e:
-        print(f"❌ Error during mass deletion: {e}")
-        conn.rollback()
+        print(f"❌ Error during database reset: {e}")
+        try:
+            cursor.execute("ROLLBACK")
+        except:
+            pass
         conn.close()
         return 0
 
 def show_database_stats():
-    """Show database statistics"""
+    """Show comprehensive database statistics"""
     conn = get_db_connection()
     if not conn:
         return
@@ -305,22 +415,27 @@ def show_database_stats():
     try:
         cursor = conn.cursor()
         
-        # Get user count
+        # Basic counts
         cursor.execute("SELECT COUNT(*) as count FROM user")
         user_count = cursor.fetchone()['count']
         
-        # Get password count
         cursor.execute("SELECT COUNT(*) as count FROM vault_entry")
         password_count = cursor.fetchone()['count']
         
-        # Get recent activity
+        # Recent activity
         cursor.execute("""
             SELECT COUNT(*) as count FROM user 
-            WHERE datetime(created_at) > datetime('now', '-7 days')
+            WHERE date(created_at) > date('now', '-7 days')
         """)
         recent_users = cursor.fetchone()['count']
         
-        # Get locked accounts
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM user 
+            WHERE date(last_login) > date('now', '-7 days')
+        """)
+        recent_logins = cursor.fetchone()['count']
+        
+        # Security stats
         cursor.execute("""
             SELECT COUNT(*) as count FROM user 
             WHERE account_locked_until IS NOT NULL 
@@ -328,16 +443,46 @@ def show_database_stats():
         """)
         locked_accounts = cursor.fetchone()['count']
         
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM user 
+            WHERE failed_login_attempts > 0
+        """)
+        accounts_with_failed_attempts = cursor.fetchone()['count']
+        
+        # Email statistics
+        cursor.execute("SELECT COUNT(*) as count FROM user WHERE email IS NOT NULL AND email != ''")
+        users_with_email = cursor.fetchone()['count']
+        
         print("📊 VaultGuard Database Statistics")
-        print("=" * 40)
+        print("=" * 50)
         print(f"👥 Total Users: {user_count}")
         print(f"🔑 Total Passwords: {password_count}")
+        print(f"📧 Users with Email: {users_with_email}")
         print(f"🆕 New Users (7 days): {recent_users}")
+        print(f"🔐 Recent Logins (7 days): {recent_logins}")
         print(f"🔒 Locked Accounts: {locked_accounts}")
+        print(f"⚠️  Accounts with Failed Attempts: {accounts_with_failed_attempts}")
         
         if user_count > 0:
             avg_passwords = password_count / user_count
             print(f"📈 Average Passwords per User: {avg_passwords:.1f}")
+            
+            # Top users by password count
+            cursor.execute("""
+                SELECT u.username, COUNT(v.id) as password_count
+                FROM user u
+                LEFT JOIN vault_entry v ON u.id = v.user_id
+                GROUP BY u.id, u.username
+                HAVING password_count > 0
+                ORDER BY password_count DESC
+                LIMIT 5
+            """)
+            top_users = cursor.fetchall()
+            
+            if top_users:
+                print(f"\n🏆 Top Users by Password Count:")
+                for user in top_users:
+                    print(f"   - {user['username']}: {user['password_count']} passwords")
         
         conn.close()
         
@@ -346,23 +491,26 @@ def show_database_stats():
         conn.close()
 
 def main():
-    """Main function with interactive menu"""
-    print("🛡️  VaultGuard Database User Management")
-    print("=" * 50)
+    """Enhanced main function with better interface"""
+    print("🛡️  VaultGuard Enhanced User Management Tool")
+    print("=" * 60)
     
+    # Command line mode
     if len(sys.argv) > 1:
-        # Command line mode
         command = sys.argv[1].lower()
         
         if command == 'list':
             users = list_all_users()
             if users:
                 print(f"\n📋 Found {len(users)} users:")
-                print("-" * 80)
+                print("-" * 100)
+                print(f"{'ID':<3} | {'Username':<20} | {'Email':<25} | {'Passwords':<9} | {'Status':<8} | {'Created':<10}")
+                print("-" * 100)
                 for user in users:
-                    last_login = user['last_login'] if user['last_login'] else 'Never'
-                    failed_attempts = user['failed_login_attempts']
-                    print(f"ID: {user['id']:3} | Username: {user['username']:20} | Passwords: {user['password_count']:2} | Created: {user['created_at'][:10]} | Last Login: {last_login:10} | Failed: {failed_attempts}")
+                    email = user['email'] if user['email'] else 'No email'
+                    email = email[:22] + "..." if len(email) > 25 else email
+                    created = user['created_at'][:10]
+                    print(f"{user['id']:<3} | {user['username']:<20} | {email:<25} | {user['password_count']:<9} | {user['status']:<8} | {created}")
         
         elif command == 'stats':
             show_database_stats()
@@ -370,7 +518,7 @@ def main():
         elif command == 'delete' and len(sys.argv) > 2:
             try:
                 user_id = int(sys.argv[2])
-                delete_user_by_id(user_id)
+                delete_user_completely(user_id)
             except ValueError:
                 print("❌ Invalid user ID. Please provide a number.")
                 
@@ -386,11 +534,11 @@ def main():
                 print("❌ Invalid days. Please provide a number.")
                 
         elif command == 'reset':
-            delete_all_users()
+            reset_database()
             
         else:
             print("❌ Invalid command or missing arguments")
-            print("\nUsage:")
+            print("\n📖 Usage:")
             print("  python delete_users.py list                    - List all users")
             print("  python delete_users.py stats                   - Show database stats")
             print("  python delete_users.py delete <user_id>        - Delete user by ID")
@@ -403,12 +551,12 @@ def main():
     # Interactive mode
     while True:
         print("\n🔧 What would you like to do?")
-        print("1. 📋 List all users")
-        print("2. 📊 Show database statistics")
-        print("3. 🗑️  Delete user by ID")
+        print("1. 📋 List all users (with enhanced details)")
+        print("2. 📊 Show comprehensive database statistics")
+        print("3. 🗑️  Delete user by ID (complete cleanup)")
         print("4. 🔍 Delete users by username pattern")
-        print("5. ⏰ Delete inactive users")
-        print("6. 💥 Delete ALL users (RESET DATABASE)")
+        print("5. ⏰ Delete inactive users (configurable days)")
+        print("6. 💥 RESET DATABASE (Delete ALL users - DANGEROUS)")
         print("7. ❌ Exit")
         
         try:
@@ -418,11 +566,14 @@ def main():
                 users = list_all_users()
                 if users:
                     print(f"\n📋 Found {len(users)} users:")
-                    print("-" * 80)
+                    print("-" * 100)
+                    print(f"{'ID':<3} | {'Username':<20} | {'Email':<25} | {'Passwords':<9} | {'Status':<8} | {'Created':<10}")
+                    print("-" * 100)
                     for user in users:
-                        last_login = user['last_login'] if user['last_login'] else 'Never'
-                        failed_attempts = user['failed_login_attempts']
-                        print(f"ID: {user['id']:3} | Username: {user['username']:20} | Passwords: {user['password_count']:2} | Created: {user['created_at'][:10]} | Last Login: {last_login:10} | Failed: {failed_attempts}")
+                        email = user['email'] if user['email'] else 'No email'
+                        email = email[:22] + "..." if len(email) > 25 else email
+                        created = user['created_at'][:10]
+                        print(f"{user['id']:<3} | {user['username']:<20} | {email:<25} | {user['password_count']:<9} | {user['status']:<8} | {created}")
                 else:
                     print("📋 No users found in database")
             
@@ -432,7 +583,7 @@ def main():
             elif choice == '3':
                 try:
                     user_id = int(input("Enter user ID to delete: "))
-                    delete_user_by_id(user_id)
+                    delete_user_completely(user_id)
                 except ValueError:
                     print("❌ Invalid user ID. Please enter a number.")
             
@@ -451,8 +602,9 @@ def main():
                     print("❌ Invalid number of days")
             
             elif choice == '6':
-                print("\n⚠️  WARNING: This will delete EVERYTHING!")
-                delete_all_users()
+                print("\n💥 WARNING: This will delete EVERYTHING!")
+                print("This will completely reset your VaultGuard database!")
+                reset_database()
             
             elif choice == '7':
                 print("👋 Goodbye!")
@@ -465,7 +617,7 @@ def main():
             print("\n\n👋 Exiting...")
             break
         except Exception as e:
-            print(f"❌ An error occurred: {e}")
+            print(f"❌ An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     main()
