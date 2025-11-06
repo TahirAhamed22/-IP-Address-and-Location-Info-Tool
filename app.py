@@ -24,13 +24,23 @@ import bleach
 # --------------------------------------------------------
 # Initialize Flask app
 # --------------------------------------------------------
-app = Flask(__name__)
+# --------------------------------------------------------
+# Initialize Flask app (Instance-Relative for Security)
+# --------------------------------------------------------
+app = Flask(__name__, instance_relative_config=True)
 
 # --------------------------------------------------------
 # Enhanced Security Configuration
 # --------------------------------------------------------
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///vaultguard_secure.db'
+
+# ✅ Always use the database inside /instance folder (never creates one in root)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or f"sqlite:///{os.path.join(app.instance_path, 'vaultguard_secure.db')}"
+
+# 👇 Print & log the active database being used
+print("Using DB:", app.config['SQLALCHEMY_DATABASE_URI'])
+logging.info(f"Using DB: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
@@ -791,9 +801,15 @@ def api_register():
         data = request.get_json()
         username = sanitize_input(data.get("username", ""))
         password = data.get("password", "")
-        email = sanitize_input(data.get("email", ""))  # NEW
-        phone = sanitize_input(data.get("phone", ""))  # NEW
-        
+        email = sanitize_input(data.get("email", ""))  # optional
+        phone = sanitize_input(data.get("phone", ""))  # optional
+
+        # ✅ Convert empty strings to None (prevents UNIQUE constraint errors)
+        email = email if email.strip() else None
+        phone = phone if phone.strip() else None
+
+        # ✅ Email/Phone are now fully optional — no contact required
+
         # Validation
         username_valid, username_error = validate_username(username)
         if not username_valid:
@@ -820,6 +836,9 @@ def api_register():
         if email and User.query.filter_by(email=email).first():
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
 
+        if phone and User.query.filter_by(phone=phone).first():
+            return jsonify({'success': False, 'message': 'Phone already registered'}), 400
+
         # Create new user
         salt = secrets.token_bytes(64)
         encryption_salt = base64.b64encode(salt).decode('utf-8')
@@ -838,7 +857,7 @@ def api_register():
         # Log registration
         SecurityLog.create_log(new_user.id, 'ACCOUNT_CREATED', 'New account created')
         
-        # Send welcome notification
+        # Send welcome notification if email present
         if email:
             NotificationService.notify_user(
                 new_user,
@@ -865,6 +884,7 @@ def api_register():
         logger.error(f"Registration error: {str(e)}")
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Server error'}), 500
+
 
 # --------------------------------------------------------
 # Password Reset System (NEW)
