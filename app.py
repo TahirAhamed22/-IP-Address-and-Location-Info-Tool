@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()  # ✅ Loads .env automatically
 import json
 import base64
 import logging
@@ -8,7 +10,7 @@ import re
 import hashlib
 import smtplib
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, abort
@@ -16,6 +18,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user, current_user
 from zxcvbn import zxcvbn
+# Add this after your existing imports (around line 20)
+from services.ai_guardian import create_ai_guardian
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -61,6 +65,8 @@ app.config['TWILIO_PHONE_NUMBER'] = os.environ.get('TWILIO_PHONE_NUMBER')
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
+# Initialize AI Guardian (add this after db = SQLAlchemy(app), around line 50)
+ai_guardian = None  # Will be initialized after app context
 
 # --------------------------------------------------------
 # Enhanced Logging
@@ -168,7 +174,7 @@ class User(db.Model, UserMixin):
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password, rounds=12).decode('utf-8')
-        self.last_password_change = datetime.utcnow()
+        self.last_password_change = datetime.now(timezone.utc)  # FIXED
     
     def check_password(self, password):
         return bcrypt.check_password_hash(self.password_hash, password)
@@ -187,11 +193,11 @@ class User(db.Model, UserMixin):
                               f'Account locked after {self.failed_login_attempts} failed attempts')
     
     def unlock_account(self):
+        """Unlock account and update last login - does NOT reset failed attempts counter"""
         self.account_locked_until = None
-        self.failed_login_attempts = 0
-        self.last_login = datetime.utcnow()
+        # ❌ DON'T reset failed_login_attempts here - let caller do it AFTER AI analysis
+        self.last_login = datetime.now(timezone.utc)
         
-        # Log security event
         SecurityLog.create_log(self.id, 'LOGIN_SUCCESS', 'Successful login')
 
     def get_encryption_key(self, master_password):
@@ -209,7 +215,13 @@ class User(db.Model, UserMixin):
         """Check if password should be changed (90 days policy)"""
         if not self.last_password_change:
             return True
-        days_since_change = (datetime.utcnow() - self.last_password_change).days
+        
+        # Handle timezone-naive datetimes from existing database records
+        last_change = self.last_password_change
+        if last_change.tzinfo is None:
+            last_change = last_change.replace(tzinfo=timezone.utc)
+       
+        days_since_change = (datetime.now(timezone.utc) - last_change).days
         return days_since_change >= 90
     
     def get_security_score(self):
@@ -218,7 +230,12 @@ class User(db.Model, UserMixin):
         
         # Password age (max 25 points)
         if self.last_password_change:
-            days_old = (datetime.utcnow() - self.last_password_change).days
+            # Handle timezone-naive datetimes
+            last_change = self.last_password_change
+            if last_change.tzinfo is None:
+                last_change = last_change.replace(tzinfo=timezone.utc)
+         
+            days_old = (datetime.now(timezone.utc) - last_change).days
             if days_old < 30:
                 score += 25
             elif days_old < 60:
@@ -280,9 +297,11 @@ class VaultEntry(db.Model):
         SecurityLog.create_log(self.user_id, 'PASSWORD_ACCESSED', 
                               f'Password accessed for {self.site}')
 
+# ===== REPLACE SecurityLog MODEL in app.py (around line 270) =====
+
 class SecurityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # ✅ CHANGED: nullable=True
     event_type = db.Column(db.String(50), nullable=False)  # LOGIN, BREACH, ACCESS, etc.
     description = db.Column(db.Text, nullable=False)
     ip_address = db.Column(db.String(45), nullable=True)
@@ -292,22 +311,50 @@ class SecurityLog(db.Model):
     
     @staticmethod
     def create_log(user_id, event_type, description, severity='INFO'):
-        """Create a security log entry"""
-        log = SecurityLog(
-            user_id=user_id,
-            event_type=event_type,
-            description=description,
-            severity=severity,
-            ip_address=request.remote_addr if request else None,
-            user_agent=request.headers.get('User-Agent') if request else None
-        )
-        db.session.add(log)
+        """Create a security log entry with proper context handling"""
         try:
+            from flask import request as flask_request, has_request_context
+            
+            # Default values
+            ip_address = None
+            user_agent = None
+            
+            # Get request data only if we're in a request context
+            if has_request_context():
+                try:
+                    ip_address = flask_request.remote_addr
+                    user_agent = flask_request.headers.get('User-Agent')
+                except:
+                    pass
+            
+            # ✅ ALLOW None user_id for system events
+            # Create log entry
+            log = SecurityLog(
+                user_id=user_id,  # Can be None now!
+                event_type=event_type,
+                description=description,
+                severity=severity,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            
+            db.session.add(log)
             db.session.commit()
+            
+            return True
+            
         except Exception as e:
-            db.session.rollback()
-            logger.error(f"Failed to create security log: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+            
+            logger.debug(f"Security log creation failed (non-critical): {e}")
+            return False
 
+
+        
+# Next class starts here (PasswordReset or DeviceFingerprint)
 class PasswordReset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -491,7 +538,7 @@ def generate_device_fingerprint(request):
     device_hash = hashlib.sha256(fingerprint_string.encode()).hexdigest()
     return device_hash
 
-
+# ====== FIX 2: DeviceFingerprint Update ======
 def register_or_update_device(user, request):
     """Register new device automatically or update existing one"""
     try:
@@ -506,7 +553,7 @@ def register_or_update_device(user, request):
 
         if device:
             # Update timestamp for existing device
-            device.last_seen = datetime.utcnow()
+            device.last_seen = datetime.now(timezone.utc)  # FIXED
             db.session.commit()
             return device
 
@@ -520,8 +567,8 @@ def register_or_update_device(user, request):
             ip_address=ip_address,
             user_agent=user_agent,
             is_trusted=False,
-            first_seen=datetime.utcnow(),
-            last_seen=datetime.utcnow()
+            first_seen=datetime.now(timezone.utc),  # FIXED
+            last_seen=datetime.now(timezone.utc)   # FIXED
         )
         db.session.add(new_device)
         db.session.commit()
@@ -773,7 +820,7 @@ def logout():
 # Enhanced Authentication API Routes
 # --------------------------------------------------------
 # --------------------------------------------------------
-# Secure API Login Route (Updated with Auto Device Tracking)
+# Secure AI-Enhanced Login Route (FINAL FIXED VERSION)
 # --------------------------------------------------------
 @app.route('/api/login', methods=["POST"])
 def api_login():
@@ -781,53 +828,106 @@ def api_login():
         data = request.get_json()
         username = sanitize_input(data.get("username", ""))
         password = data.get("password", "")
-        
+
         if not username or not password:
-            return jsonify({'success': False, 'message': 'Username and password required'}), 400
-        
+            return jsonify({
+                'success': False,
+                'message': 'Username and password required'
+            }), 400
+
+        # USER LOOKUP
         user = User.query.filter_by(username=username).first()
-        
         if not user:
-            SecurityLog.create_log(None, 'LOGIN_FAILED', f'Failed login attempt for non-existent user: {username}', 'WARNING')
+            SecurityLog.create_log(
+                None, 'LOGIN_FAILED',
+                f'Failed login for non-existent user: {username}', 'WARNING'
+            )
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
-        
-        # Check if account is locked
+
+        # ACCOUNT LOCK CHECK
         if user.is_account_locked():
-            SecurityLog.create_log(user.id, 'LOGIN_BLOCKED', 'Login attempt on locked account', 'WARNING')
-            return jsonify({'success': False, 'message': 'Account locked. Try again later.'}), 423
-        
-        # Authenticate password
+            SecurityLog.create_log(
+                user.id, 'LOGIN_BLOCKED',
+                'Login attempt on locked account', 'WARNING'
+            )
+            return jsonify({
+                'success': False,
+                'message': 'Account locked. Try again later.'
+            }), 423
+
+        # PASSWORD CHECK - FAILED
         if not user.check_password(password):
             user.failed_login_attempts += 1
             db.session.commit()
 
             # Auto-lock after 3 failed attempts
             if user.failed_login_attempts >= 3:
-                user.lock_account(60)  # lock for 60 seconds
+                user.lock_account(60)
                 db.session.commit()
-                
-                # Send security alert
+
                 if user.security_alerts:
                     NotificationService.notify_user(
                         user,
                         'Account Locked 🚨',
-                        f'Your account has been locked due to {user.failed_login_attempts} failed login attempts.\n'
-                        f'If this wasn’t you, please reset your password immediately.',
+                        f'Your account was locked after {user.failed_login_attempts} failed attempts.',
                         is_critical=True
                     )
 
-            SecurityLog.create_log(user.id, 'LOGIN_FAILED', f'Failed login attempt #{user.failed_login_attempts}', 'WARNING')
+            SecurityLog.create_log(
+                user.id, 'LOGIN_FAILED',
+                f'Failed login attempt #{user.failed_login_attempts}', 'WARNING'
+            )
+
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
-        # ✅ Successful login
+        # ✅ PASSWORD CORRECT - BUT DON'T RESET COUNTERS YET!
+
+        # 🔥 DEBUG: Print current failed attempts
+        logger.info("=" * 70)
+        logger.info("🔍 PRE-AI ANALYSIS DEBUG")
+        logger.info(f"User: {user.username}")
+        logger.info(f"Failed attempts in DB: {user.failed_login_attempts}")
+        logger.info(f"About to call AI Guardian...")
+        logger.info("=" * 70)
+        
+        # 🤖 AI GUARDIAN ANALYSIS - BEFORE RESETTING COUNTERS!
+        threat_analysis = None
+        ai_message = None
+        
+        if ai_guardian:
+            try:
+                # AI sees the ACTUAL failed_login_attempts count
+                analysis_result = ai_guardian.analyze_login_attempt(user, request, is_success=True)
+                threat_analysis = analysis_result.get('threat_analysis', {})
+                
+                # Generate user-friendly message
+                threat_level = threat_analysis.get('threat_level', 'safe')
+                threat_score = threat_analysis.get('threat_score', 0)
+                reasons = threat_analysis.get('reasons', [])
+                
+                if threat_level == 'critical':
+                    ai_message = f"🚨 CRITICAL: Threat score {threat_score}/100. {', '.join(reasons[:2])}"
+                elif threat_level == 'suspicious':
+                    ai_message = f"⚠️ Suspicious: Threat score {threat_score}/100. {', '.join(reasons[:2])}"
+                else:
+                    ai_message = f"✅ Safe: Login pattern normal (score {threat_score}/100)"
+                    
+            except Exception as ai_error:
+                logger.warning(f"AI analysis skipped: {ai_error}")
+                ai_message = "AI analysis unavailable"
+        
+        # NOW reset counters AFTER AI analysis
         user.unlock_account()
         user.failed_login_attempts = 0
         db.session.commit()
 
-        # Register or update device fingerprint
+        # DEVICE MANAGEMENT
         device = register_or_update_device(user, request)
+        if device:
+            device.is_trusted = True
+            db.session.commit()
 
-        # Start session
+        # CREATE SESSION
         login_user(user, remember=False)
         session['logged_in'] = True
         session['username'] = user.username
@@ -835,39 +935,49 @@ def api_login():
         session['device_hash'] = device.device_hash if device else None
         session.permanent = True
 
-        # Mark this device as trusted after successful login
-        if device:
-            device.is_trusted = True
-            db.session.commit()
-
-        # Log successful login
-        SecurityLog.create_log(user.id, 'LOGIN_SUCCESS', 'User logged in successfully', 'INFO')
-
-        # ✅ Optional: Notify user of login from new/unrecognized device
+        # NEW DEVICE ALERT
         if device and not device.is_trusted and user.login_notifications:
             NotificationService.notify_user(
                 user,
                 "New Device Login Detected 🚨",
-                f"A new device just logged into your account.\n"
-                f"Device: {device.user_agent or 'Unknown Device'}\n"
-                f"IP: {device.ip_address or 'Unknown IP'}\n\n"
-                f"If this wasn’t you, please secure your account immediately.",
+                f"A new device logged in.\nDevice: {device.user_agent}\nIP: {device.ip_address}",
                 is_critical=True
             )
 
-        return jsonify({
+        # Log success
+        SecurityLog.create_log(
+            user.id, 'LOGIN_SUCCESS',
+            'User logged in successfully', 'INFO'
+        )
+
+        # BUILD RESPONSE
+        response_data = {
             'success': True,
             'message': 'Secure login successful!',
             'salt': user.encryption_salt,
             'username': user.username,
             'security_score': user.get_security_score(),
             'device_trusted': device.is_trusted if device else False
-        }), 200
+        }
+
+        # 🤖 ADD AI THREAT INFO
+        if threat_analysis:
+            response_data['ai_threat_analysis'] = {
+                'threat_score': threat_analysis.get('threat_score', 0),
+                'threat_level': threat_analysis.get('threat_level', 'safe'),
+                'reasons': threat_analysis.get('reasons', []),
+                'message': ai_message
+            }
+
+        return jsonify(response_data), 200
 
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'Server error during login'}), 500
+        return jsonify({
+            'success': False,
+            'message': 'Server error during login'
+        }), 500
 
 
 @app.route('/api/register', methods=["POST"])
@@ -1352,6 +1462,197 @@ def security_dashboard_api():
         logger.error(f"Dashboard error: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to load dashboard'}), 500
 
+
+# ========================================
+# AI GUARDIAN DASHBOARD API ENDPOINTS
+# Add these routes to your app.py (after existing routes)
+# ========================================
+
+@app.route('/api/ai/dashboard', methods=['GET'])
+@login_required
+def get_ai_dashboard():
+    """Get complete AI Guardian dashboard data"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get AI threat logs for current user only
+        threat_logs = SecurityLog.query.filter(
+            SecurityLog.user_id == current_user.id,
+            SecurityLog.event_type == 'AI_THREAT_ANALYSIS',
+            SecurityLog.timestamp >= cutoff_date
+        ).order_by(SecurityLog.timestamp.desc()).all()
+        
+        # Calculate statistics
+        total_analyses = len(threat_logs)
+        safe_count = 0
+        suspicious_count = 0
+        critical_count = 0
+        threat_scores = []
+        
+        for log in threat_logs:
+            # Extract score from description
+            import re
+            score_match = re.search(r'Score (\d+)', log.description)
+            if score_match:
+                score = int(score_match.group(1))
+                threat_scores.append(score)
+                
+                # Categorize based on NEW scoring system
+                if score >= 80:
+                    critical_count += 1
+                elif score >= 30:
+                    suspicious_count += 1
+                else:
+                    safe_count += 1
+        
+        avg_score = sum(threat_scores) / len(threat_scores) if threat_scores else 0
+        
+        # Get device stats
+        total_devices = DeviceFingerprint.query.filter_by(user_id=current_user.id).count()
+        trusted_devices = DeviceFingerprint.query.filter_by(
+            user_id=current_user.id, 
+            is_trusted=True
+        ).count()
+        new_devices = total_devices - trusted_devices
+        
+        # Get recent threat history (last 10)
+        recent_threats = []
+        for log in threat_logs[:10]:
+            score_match = re.search(r'Score (\d+)', log.description)
+            score = int(score_match.group(1)) if score_match else 0
+            
+            # Determine level based on NEW scoring
+            if score >= 80:
+                level = 'critical'
+            elif score >= 30:
+                level = 'suspicious'
+            else:
+                level = 'safe'
+            
+            recent_threats.append({
+                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'score': score,
+                'level': level,
+                'description': log.description,
+                'ip_address': log.ip_address
+            })
+        
+        # Get daily threat scores for graph (last 7 days)
+        daily_scores = {}
+        for log in threat_logs:
+            day = log.timestamp.strftime('%Y-%m-%d')
+            score_match = re.search(r'Score (\d+)', log.description)
+            if score_match:
+                score = int(score_match.group(1))
+                if day not in daily_scores:
+                    daily_scores[day] = []
+                daily_scores[day].append(score)
+        
+        # Average scores per day
+        graph_data = []
+        for day in sorted(daily_scores.keys()):
+            avg = sum(daily_scores[day]) / len(daily_scores[day])
+            graph_data.append({
+                'date': day,
+                'score': round(avg, 1),
+                'count': len(daily_scores[day])
+            })
+        
+        return jsonify({
+            'success': True,
+            'dashboard': {
+                'statistics': {
+                    'total_analyses': total_analyses,
+                    'safe_count': safe_count,
+                    'suspicious_count': suspicious_count,
+                    'critical_count': critical_count,
+                    'average_score': round(avg_score, 1)
+                },
+                'devices': {
+                    'total': total_devices,
+                    'trusted': trusted_devices,
+                    'new': new_devices
+                },
+                'recent_threats': recent_threats,
+                'graph_data': graph_data,
+                'ai_model': {
+                    'type': 'Behavioral AI' if ai_guardian else 'Rule-based',
+                    'trained': ai_guardian.detector.is_trained if ai_guardian else False,
+                    'profiles': len(ai_guardian.detector.user_profiles) if ai_guardian else 0
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"AI Dashboard error: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to load AI dashboard'
+        }), 500
+
+
+@app.route('/api/ai/last-threat', methods=['GET'])
+@login_required
+def get_last_threat():
+    """Get most recent AI threat analysis for current user"""
+    try:
+        last_threat = SecurityLog.query.filter(
+            SecurityLog.user_id == current_user.id,
+            SecurityLog.event_type == 'AI_THREAT_ANALYSIS'
+        ).order_by(SecurityLog.timestamp.desc()).first()
+        
+        if not last_threat:
+            return jsonify({
+                'success': True,
+                'has_data': False,
+                'message': 'No AI analyses yet'
+            }), 200
+        
+        # Extract data
+        import re
+        score_match = re.search(r'Score (\d+)', last_threat.description)
+        score = int(score_match.group(1)) if score_match else 0
+        
+        # Determine level based on NEW scoring
+        if score >= 80:
+            level = 'critical'
+            level_text = 'CRITICAL THREAT'
+        elif score >= 60:
+            level = 'high_risk'
+            level_text = 'HIGH RISK'
+        elif score >= 30:
+            level = 'suspicious'
+            level_text = 'SUSPICIOUS'
+        else:
+            level = 'safe'
+            level_text = 'Safe'
+        
+        # Extract reasons
+        reasons_match = re.search(r'Reasons: (.+)$', last_threat.description)
+        reasons = reasons_match.group(1) if reasons_match else 'Normal login pattern'
+        
+        return jsonify({
+            'success': True,
+            'has_data': True,
+            'threat': {
+                'score': score,
+                'level': level,
+                'level_text': level_text,
+                'reasons': reasons,
+                'timestamp': last_threat.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'ip_address': last_threat.ip_address
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Last threat error: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to get last threat'
+        }), 500
+
+
 # --------------------------------------------------------
 # Notification Settings API (NEW)
 # --------------------------------------------------------
@@ -1507,6 +1808,141 @@ def trust_device(device_id):
     except Exception as e:
         logger.error(f"Trust device error: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to trust device'}), 500
+
+# --------------------------------------------------------
+# AI Guardian API Routes
+# --------------------------------------------------------
+# ===== REPLACE YOUR /api/ai/threat-stats ROUTE WITH THIS =====
+# Location: Around line 1570 in app.py
+
+@app.route('/api/ai/threat-stats', methods=['GET'])
+@login_required
+def get_ai_threat_stats():
+    """Get AI threat detection statistics - FIXED to exclude deleted users"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get all AI threat analysis logs
+        threat_logs = SecurityLog.query.filter(
+            SecurityLog.event_type == 'AI_THREAT_ANALYSIS',
+            SecurityLog.timestamp >= cutoff_date
+        ).all()
+
+        # ✅ FIX: Filter out logs from deleted users
+        valid_logs = []
+        for log in threat_logs:
+            if log.user_id:  # Only process if user_id exists
+                user_exists = User.query.filter_by(id=log.user_id).first()
+                if user_exists:  # Only include if user still exists
+                    valid_logs.append(log)
+
+        # Replace threat_logs with valid_logs for remaining code
+        threat_logs = valid_logs
+        
+        # Calculate statistics from valid logs only
+        if not valid_logs:
+            stats = {
+                'total_analyses': 0,
+                'safe_count': 0,
+                'suspicious_count': 0,
+                'critical_count': 0,
+                'average_score': 0,
+                'days_analyzed': days
+            }
+        else:
+            # Extract scores and categorize
+            safe_count = 0
+            suspicious_count = 0
+            critical_count = 0
+            scores = []
+            
+            for log in valid_logs:
+                try:
+                    import re
+                    match = re.search(r'Score (\d+)', log.description)
+                    if match:
+                        score = int(match.group(1))
+                        scores.append(score)
+                        
+                        # ✅ NEW SCORING SYSTEM
+                        if score >= 61:
+                            critical_count += 1
+                        elif score >= 31:
+                            suspicious_count += 1
+                        else:
+                            safe_count += 1
+                except:
+                    pass
+            
+            avg_score = sum(scores) / len(scores) if scores else 0
+            
+            stats = {
+                'total_analyses': len(valid_logs),
+                'safe_count': safe_count,
+                'suspicious_count': suspicious_count,
+                'critical_count': critical_count,
+                'average_score': round(avg_score, 1),
+                'days_analyzed': days
+            }
+        
+        # Get model status
+        model_status = {
+            'is_trained': ai_guardian.detector.is_trained if ai_guardian else False,
+            'model_type': 'Behavioral AI (Pure Python)' if (ai_guardian and ai_guardian.detector.is_trained) else 'Rule-based',
+            'user_profiles': len(ai_guardian.detector.user_profiles) if ai_guardian else 0
+        }
+        
+        return jsonify({
+            'success': True,
+            'statistics': stats,
+            'ai_model_status': model_status
+        }), 200
+
+        
+    except Exception as e:
+        logger.error(f"AI stats error: {e}")
+        # Return empty stats instead of failing
+        return jsonify({
+            'success': True,
+            'statistics': {
+                'total_analyses': 0,
+                'safe_count': 0,
+                'suspicious_count': 0,
+                'critical_count': 0,
+                'average_score': 0,
+                'days_analyzed': 7
+            },
+            'ai_model_status': {
+                'is_trained': False,
+                'model_type': 'Rule-based',
+                'user_profiles': 0
+            }
+        }), 200
+
+
+@app.route('/api/ai/model-status', methods=['GET'])
+@login_required
+def get_ai_model_status():
+    """Get AI model training status"""
+    try:
+        if not ai_guardian:
+            return jsonify({
+                'success': False,
+                'message': 'AI Guardian not available'
+            }), 500
+        
+        status = ai_guardian.detector.get_model_status()
+        
+        return jsonify({
+            'success': True,
+            'model_status': status,
+            'threat_detector_active': True
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"AI status error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to get model status'}), 500
 
 # --------------------------------------------------------
 # Enhanced Password Analysis
@@ -1768,9 +2204,6 @@ def export_vault():
         logger.error(f"Export error: {str(e)}")
         return jsonify({'success': False, 'message': 'Export failed'}), 500
 
-# --------------------------------------------------------
-# User Information API
-# --------------------------------------------------------
 @app.route('/api/me', methods=['GET'])
 def get_user_info():
     try:
@@ -1786,16 +2219,64 @@ def get_user_info():
                 'two_factor_enabled': current_user.two_factor_enabled,
                 'password_age_warning': current_user.should_change_password(),
                 'account_created': current_user.created_at.strftime('%Y-%m-%d'),
-                'last_login': current_user.last_login.strftime('%Y-%m-%d %H:%M:%S') if current_user.last_login else None
+                'last_login': current_user.last_login.strftime('%Y-%m-%d %H:%M:%S') if current_user.last_login else None,
+
+                # ⭐ REQUIRED for Frontend 2FA Enforcement
+                'force_2fa': session.get("force_2fa", False),
             })
+
         else:
             return jsonify({
                 'success': True,
-                'authenticated': False
+                'authenticated': False,
+                'force_2fa': False
             })
+
     except Exception as e:
         logger.error(f"User info error: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to get user info'}), 500
+
+# --------------------------------------------------------
+# 2FA Verification Route (FINAL)
+# --------------------------------------------------------
+@app.route('/api/verify-2fa', methods=['POST'])
+@login_required
+def verify_two_factor():
+    try:
+        data = request.get_json()
+        code = data.get("code", "").strip()
+
+        if not code:
+            return jsonify({'success': False, 'message': 'Invalid code'}), 400
+
+        # Compare with OTP stored in session
+        valid_code = session.get("twofa_code")
+
+        if not valid_code:
+            return jsonify({'success': False, 'message': 'No active 2FA session'}), 400
+
+        if str(code) != str(valid_code):
+            return jsonify({'success': False, 'message': 'Incorrect 2FA code'}), 401
+
+        # Success → mark session as 2FA verified
+        session["force_2fa"] = False
+        session["twofa_verified"] = True
+        session.pop("twofa_code", None)
+
+        # Log success
+        SecurityLog.create_log(
+            current_user.id,
+            "2FA_VERIFIED",
+            "User successfully completed 2FA verification"
+        )
+
+        return jsonify({'success': True, 'message': '2FA verification successful'}), 200
+
+    except Exception as e:
+        logger.error(f"2FA verification error: {e}")
+        return jsonify({'success': False, 'message': '2FA verification failed'}), 500
+
+
 
 # --------------------------------------------------------
 # Admin/Maintenance Routes (Optional)
@@ -1941,12 +2422,123 @@ def extend_session():
 # --------------------------------------------------------
 # Run Application with Enhanced Security
 # --------------------------------------------------------
+# --------------------------------------------------------
+# Application Startup and Configuration
+# --------------------------------------------------------
+def create_default_admin():
+    """Create default admin user if none exists"""
+    if User.query.count() == 0:
+        try:
+            admin_password = os.environ.get('ADMIN_PASSWORD') or secrets.token_urlsafe(16)
+            
+            salt = secrets.token_bytes(64)
+            encryption_salt = base64.b64encode(salt).decode('utf-8')
+            
+            admin_user = User(
+                username='admin',
+                email=os.environ.get('ADMIN_EMAIL'),
+                encryption_salt=encryption_salt,
+                email_notifications=True,
+                security_alerts=True
+            )
+            admin_user.set_password(admin_password)
+            
+            db.session.add(admin_user)
+            db.session.commit()
+            
+            print(f"Default admin user created:")
+            print(f"Username: admin")
+            print(f"Password: {admin_password}")
+            print("Please change this password after first login!")
+            
+            SecurityLog.create_log(admin_user.id, 'ACCOUNT_CREATED', 'Default admin account created')
+            
+        except Exception as e:
+            logger.error(f"Failed to create admin user: {e}")
+
+# Add this to prevent timeouts
+@app.before_request
+def extend_session():
+    session.permanent = True
+    app.permanent_session_lifetime = timedelta(minutes=30)
+
+
+def initialize_ai_guardian():
+    """Initialize AI Guardian safely"""
+    global ai_guardian
+    try:
+        ai_guardian = create_ai_guardian(db.session, NotificationService)
+        logger.info("✅ AI Guardian initialized successfully")
+        
+        # Get model status
+        status = ai_guardian.detector.get_model_status()
+        logger.info(f"🤖 AI Model Status: {status['model_type']}, Profiles: {status.get('user_profiles', 0)}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"❌ AI Guardian initialization failed: {e}")
+        logger.warning("⚠️ Application will run without AI threat detection")
+        return False
+    
+    
+# --------------------------------------------------------
+# Run Application with Enhanced Security
+# --------------------------------------------------------
+# ===== ADD THIS SECTION TO app.py (Replace existing initialization) =====
+# Location: After "if __name__ == '__main__':" section (around line 2050)
+
 if __name__ == '__main__':
+    # Initialize database first
     with app.app_context():
         db.create_all()
         create_default_admin()
         logger.info("Database initialized successfully")
         
+        # ✅ CRITICAL FIX: Initialize AND train AI Guardian
+        try:
+            from services.ai_guardian import create_ai_guardian
+            ai_guardian = create_ai_guardian(db.session, NotificationService)
+            
+            # 🤖 Train AI from existing security logs
+            training_data = []
+            try:
+                # Get last 100 login attempts for training
+                login_logs = SecurityLog.query.filter(
+                    SecurityLog.event_type.in_(['LOGIN_SUCCESS', 'LOGIN_FAILED'])
+                ).order_by(SecurityLog.timestamp.desc()).limit(100).all()
+                
+                for log in login_logs:
+                    user = User.query.get(log.user_id)
+                    if user:
+                        training_data.append({
+                            'user_id': user.id,
+                            'ip_address': log.ip_address or '0.0.0.0',
+                            'user_agent': log.user_agent or '',
+                            'timestamp': log.timestamp,
+                            'failed_attempts': 0 if log.event_type == 'LOGIN_SUCCESS' else 1,
+                            'time_since_last_login': 0,
+                            'device_hash': '',
+                            'is_new_device': False,
+                            'is_trusted_device': True,
+                            'is_success': log.event_type == 'LOGIN_SUCCESS'
+                        })
+                
+                if len(training_data) >= 5:
+                    ai_guardian.detector.train_model(training_data)
+                    logger.info(f"✅ AI Guardian trained with {len(training_data)} historical logins")
+                else:
+                    logger.info(f"⚠️ Limited training data: {len(training_data)} samples (need 5+)")
+                    
+            except Exception as train_error:
+                logger.warning(f"AI training skipped: {train_error}")
+            
+            logger.info("✅ AI Guardian fully initialized and ready")
+            
+        except Exception as e:
+            logger.error(f"❌ AI Guardian initialization failed: {e}")
+            logger.warning("⚠️ Application will run without AI threat detection")
+            ai_guardian = None
+    
     print("=" * 80)
     print("🛡️  VAULTGUARD SECURE - ENHANCED VERSION")
     print("=" * 80)
@@ -1961,8 +2553,16 @@ if __name__ == '__main__':
     print("   ✅ Enhanced Security Logging")
     print("   ✅ Notification Preferences")
     print("   ✅ Two-Factor Ready Architecture")
+    
+    if ai_guardian:
+        status = ai_guardian.detector.get_model_status()
+        print(f"   🤖 AI Guardian: {status['model_type']} ({status['user_profiles']} profiles)")
+    else:
+        print("   ⚠️ AI Guardian: Disabled")
+    
     print("=" * 80)
     
+    # ... rest of your startup code ...
     # Environment setup instructions
     print("\n🔧 ENVIRONMENT SETUP:")
     print("For full functionality, set these environment variables:")
