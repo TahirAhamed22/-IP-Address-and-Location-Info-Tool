@@ -1,2623 +1,3887 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()  # ✅ Loads .env automatically
-import json
-import base64
-import logging
-import random
-import secrets
-import re
-import hashlib
-import smtplib
-import requests
-from datetime import datetime, timedelta, timezone
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, abort
-from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user, current_user
-from zxcvbn import zxcvbn
-# Add this after your existing imports (around line 20)
-from services.ai_guardian import create_ai_guardian
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import bleach
+// ===== ENHANCED GLOBAL VARIABLES =====
+let analysisEnabled = true;
+let currentUserSalt = null;
+let masterPasswordCache = null;
+let securityMode = true;
+let themePreference = 'dark';
+let isLoginMode = true;
+let vaultData = [];
+let vaultFilter = '';
+let vaultSortBy = 'updated_at';
+let securityScore = 0;
+let dashboardData = null;
 
-# --------------------------------------------------------
-# Initialize Flask app
-# --------------------------------------------------------
-# --------------------------------------------------------
-# Initialize Flask app (Instance-Relative for Security)
-# --------------------------------------------------------
-app = Flask(__name__, instance_relative_config=True)
+let passwordGeneratorSettings = {
+    length: 16,
+    includeUpper: true,
+    includeLower: true,
+    includeNumbers: true,
+    includeSymbols: true
+};
 
-# --------------------------------------------------------
-# Enhanced Security Configuration
-# --------------------------------------------------------
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
+let performanceMetrics = {
+    pageLoadTime: 0,
+    analysisCount: 0,
+    apiCallCount: 0
+};
 
-# ✅ Always use the database inside /instance folder (never creates one in root)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or f"sqlite:///{os.path.join(app.instance_path, 'vaultguard_secure.db')}"
+// DOM Elements Storage
+let elements = {};
 
-# 👇 Print & log the active database being used
-print("Using DB:", app.config['SQLALCHEMY_DATABASE_URI'])
-logging.info(f"Using DB: {app.config['SQLALCHEMY_DATABASE_URI']}")
-
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
-
-# Email Configuration
-app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
-
-# SMS Configuration (using Twilio as example)
-app.config['TWILIO_ACCOUNT_SID'] = os.environ.get('TWILIO_ACCOUNT_SID')
-app.config['TWILIO_AUTH_TOKEN'] = os.environ.get('TWILIO_AUTH_TOKEN')
-app.config['TWILIO_PHONE_NUMBER'] = os.environ.get('TWILIO_PHONE_NUMBER')
-
-db = SQLAlchemy(app)
-bcrypt = Bcrypt(app)
-# Initialize AI Guardian (add this after db = SQLAlchemy(app), around line 50)
-ai_guardian = None  # Will be initialized after app context
-
-# --------------------------------------------------------
-# Enhanced Logging
-# --------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('vaultguard.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# --------------------------------------------------------
-# Flask-Login Setup
-# --------------------------------------------------------
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'home'
-login_manager.session_protection = "strong"
-
-@login_manager.user_loader
-def load_user(user_id):
-    try:
-        user = User.query.get(int(user_id))
-        if user and user.is_account_locked():
-            return None
-        return user
-    except (ValueError, TypeError):
-        return None
-    
-# Add this function to your existing app.py
-def check_password_breach_advanced(password):
-    """Enhanced breach checking with k-anonymity"""
-    try:
-        import hashlib
-        import requests
+// ===== ENHANCED INITIALIZATION =====
+function initializeElements() {
+    elements = {
+        // Main interface elements
+        themeToggle: document.getElementById('themeToggle'),
+        passwordInput: document.getElementById('passwordInput'),
+        strengthSection: document.getElementById('strengthSection'),
+        analysisResults: document.getElementById('analysisResults'),
+        policySection: document.getElementById('policySection'),
+        strengthFill: document.getElementById('strengthFill'),
+        strengthText: document.getElementById('strengthText'),
+        crackTime: document.getElementById('crackTime'),
+        breachStatus: document.getElementById('breachStatus'),
+        entropyValue: document.getElementById('entropyValue'),
+        lengthValue: document.getElementById('lengthValue'),
         
-        # Generate SHA-1 hash
-        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
-        prefix = sha1_hash[:5]
-        suffix = sha1_hash[5:]
+        // Policy icons
+        lengthIcon: document.getElementById('lengthIcon'),
+        lowerIcon: document.getElementById('lowerIcon'),
+        upperIcon: document.getElementById('upperIcon'),
+        digitIcon: document.getElementById('digitIcon'),
+        symbolIcon: document.getElementById('symbolIcon'),
         
-        # Query HaveIBeenPwned API
-        url = f"https://api.pwnedpasswords.com/range/{prefix}"
-        headers = {'Add-Padding': 'true'}
+        // Input controls
+        toggleVisibility: document.getElementById('toggleVisibility'),
+        copyPassword: document.getElementById('copyPassword'),
+        clearPassword: document.getElementById('clearPassword'),
+        generatePassword: document.getElementById('generatePassword'),
+        pauseBtn: document.getElementById('pauseBtn'),
         
-        response = requests.get(url, headers=headers, timeout=5)
+        // Generator controls
+        lengthSlider: document.getElementById('lengthSlider'),
+        lengthValueDisplay: document.getElementById('lengthValue'),
+        generateBtn: document.getElementById('generateBtn'),
+        generatedPassword: document.getElementById('generatedPassword'),
+        copyGenerated: document.getElementById('copyGenerated'),
+        useGenerated: document.getElementById('useGenerated'),
+        includeUpper: document.getElementById('includeUpper'),
+        includeLower: document.getElementById('includeLower'),
+        includeNumbers: document.getElementById('includeNumbers'),
+        includeSymbols: document.getElementById('includeSymbols'),
         
-        if response.status_code == 200:
-            # Parse response
-            for line in response.text.splitlines():
-                parts = line.split(':')
-                if len(parts) == 2 and parts[0] == suffix:
-                    count = int(parts[1])
-                    return True, count
-            return False, 0
-        else:
-            return False, 0
-            
-    except Exception as e:
-        logger.warning(f"Breach check failed: {e}")
-        return False, 0
+        // Authentication elements
+        authModal: document.getElementById('authModal'),
+        authForm: document.getElementById('authForm'),
+        authTitle: document.getElementById('authTitle'),
+        authSubmit: document.getElementById('authSubmit'),
+        authSwitchText: document.getElementById('authSwitchText'),
+        authSwitchLink: document.getElementById('authSwitchLink'),
+        authUsername: document.getElementById('authUsername'),
+        authEmail: document.getElementById('authEmail'),
+        authPhone: document.getElementById('authPhone'),
+        authPassword: document.getElementById('authPassword'),
+        loginBtn: document.getElementById('loginBtn'),
+        loginPromptBtn: document.getElementById('loginPromptBtn'),
+        closeModal: document.getElementById('closeModal'),
+        
+        // Vault elements
+        vaultList: document.getElementById('vaultList'),
+        savePasswordBtn: document.getElementById('save-password-btn'),
+        siteName: document.getElementById('site-name'),
+        vaultUsername: document.getElementById('vault-username'),
+        vaultPassword: document.getElementById('vault-password'),
+        vaultCategory: document.getElementById('vault-category'),
+        vaultNotes: document.getElementById('vault-notes'),
+        
+        // Enhanced controls
+        vaultSearch: document.getElementById('vault-search'),
+        clearSearch: document.getElementById('clearSearch'),
+        vaultSort: document.getElementById('vault-sort'),
+        exportVault: document.getElementById('exportVault'),
+        auditVault: document.getElementById('auditVault'),
+        
+        // Dashboard elements
+        securityDashboardBtn: document.getElementById('securityDashboardBtn'),
+        securityDashboard: document.getElementById('securityDashboard'),
+        closeDashboard: document.getElementById('closeDashboard'),
+        securityScoreValue: document.getElementById('securityScoreValue'),
+        
+        // Notification settings
+        notificationSettingsBtn: document.getElementById('notificationSettingsBtn'),
+        notificationSettingsModal: document.getElementById('notificationSettingsModal'),
+        closeNotificationSettings: document.getElementById('closeNotificationSettings')
+    };
+}
 
-# --------------------------------------------------------
-# Enhanced Database Models
-# --------------------------------------------------------
-class User(db.Model, UserMixin):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    email = db.Column(db.String(120), unique=True, nullable=True, index=True)  # NEW
-    phone = db.Column(db.String(20), unique=True, nullable=True)  # NEW
-    password_hash = db.Column(db.String(128), nullable=False)
-    encryption_salt = db.Column(db.String(128), nullable=False)
-    recovery_email = db.Column(db.String(120), nullable=True)  # NEW
-    recovery_phone = db.Column(db.String(20), nullable=True)  # NEW
-    
-    # Security & Preferences
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_login = db.Column(db.DateTime)
-    last_password_change = db.Column(db.DateTime, default=datetime.utcnow)  # NEW
-    failed_login_attempts = db.Column(db.Integer, default=0)
-    account_locked_until = db.Column(db.DateTime)
-    
-    # Notification preferences
-    email_notifications = db.Column(db.Boolean, default=True)  # NEW
-    sms_notifications = db.Column(db.Boolean, default=False)  # NEW
-    security_alerts = db.Column(db.Boolean, default=True)  # NEW
-    login_notifications = db.Column(db.Boolean, default=True)  # NEW
-    breach_notifications = db.Column(db.Boolean, default=True)  # NEW
-    
-    # Two-Factor Authentication
-    two_factor_enabled = db.Column(db.Boolean, default=False)  # NEW
-    two_factor_secret = db.Column(db.String(32), nullable=True)  # NEW
-    backup_codes = db.Column(db.Text, nullable=True)  # NEW
-    
-    # Device tracking
-    trusted_devices = db.Column(db.Text, nullable=True)  # NEW (JSON string)
-    
-    # Relationships
-    vault_entries = db.relationship('VaultEntry', backref='owner', lazy=True, cascade='all, delete-orphan')
-    security_logs = db.relationship('SecurityLog', backref='user', lazy=True, cascade='all, delete-orphan')
-    password_resets = db.relationship('PasswordReset', backref='user', lazy=True, cascade='all, delete-orphan')
+async function initialize() {
+    try {
+        const pageLoadStart = performance.now();
+        
+        // Initialize DOM elements first
+        initializeElements();
+        
+        // Check secure context
+        checkSecureContext();
+        
+        // Initialize theme
+        initializeTheme();
+        
+        // Add enhanced styles
+        addEnhancedStyles();
+        
+        // Initialize event listeners
+        initializeEventListeners();
+        
+        // Check authentication status
+        await checkAuthenticationStatus();
+        
+        // Load vault data if authenticated
+        if (currentUserSalt) {
+            await loadVaultData();
+            await loadSecurityDashboard();
+        }
+        
+        // Initialize password generator
+        initializePasswordGenerator();
+        
+        // Show security status
+        showSecurityStatus();
+        
+        // Record performance metrics
+        const pageLoadTime = performance.now() - pageLoadStart;
+        recordPerformanceMetric('pageLoadTime', pageLoadTime);
+        
+        console.log(`VaultGuard Enhanced initialized in ${pageLoadTime.toFixed(2)}ms`);
+        
+    } catch (error) {
+        console.error('Initialization error:', error);
+        showNotification('Application failed to initialize properly', 'error');
+    }
+}
 
-    def set_password(self, password):
-        self.password_hash = bcrypt.generate_password_hash(password, rounds=12).decode('utf-8')
-        self.last_password_change = datetime.now(timezone.utc)  # FIXED
+// ===== THEME MANAGEMENT =====
+function initializeTheme() {
+    const body = document.body;
+    body.setAttribute('data-theme', themePreference);
     
-    def check_password(self, password):
-        return bcrypt.check_password_hash(self.password_hash, password)
-    
-    def is_account_locked(self):
-        if self.account_locked_until and self.account_locked_until > datetime.utcnow():
-            return True
-        return False
-    
-    def lock_account(self, duration_minutes=60):
-        self.account_locked_until = datetime.utcnow() + timedelta(minutes=duration_minutes)
-        self.failed_login_attempts += 1
-        
-        # Log security event
-        SecurityLog.create_log(self.id, 'ACCOUNT_LOCKED', 
-                              f'Account locked after {self.failed_login_attempts} failed attempts')
-    
-    def unlock_account(self):
-        """Unlock account and update last login - does NOT reset failed attempts counter"""
-        self.account_locked_until = None
-        # ❌ DON'T reset failed_login_attempts here - let caller do it AFTER AI analysis
-        self.last_login = datetime.now(timezone.utc)
-        
-        SecurityLog.create_log(self.id, 'LOGIN_SUCCESS', 'Successful login')
+    if (elements.themeToggle) {
+        updateThemeToggleIcon();
+        elements.themeToggle.addEventListener('click', toggleTheme);
+    }
+}
 
-    def get_encryption_key(self, master_password):
-        salt = base64.b64decode(self.encryption_salt.encode())
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=600000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(master_password.encode()))
-        return key
+function toggleTheme() {
+    themePreference = themePreference === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', themePreference);
+    updateThemeToggleIcon();
     
-    def should_change_password(self):
-        """Check if password should be changed (90 days policy)"""
-        if not self.last_password_change:
-            return True
-        
-        # Handle timezone-naive datetimes from existing database records
-        last_change = self.last_password_change
-        if last_change.tzinfo is None:
-            last_change = last_change.replace(tzinfo=timezone.utc)
-       
-        days_since_change = (datetime.now(timezone.utc) - last_change).days
-        return days_since_change >= 90
+    // Add smooth theme transition
+    document.body.style.transition = 'all 0.3s ease';
+    setTimeout(() => {
+        document.body.style.transition = '';
+    }, 300);
     
-    def get_security_score(self):
-        """Calculate user security score"""
-        score = 0
-        
-        # Password age (max 25 points)
-        if self.last_password_change:
-            # Handle timezone-naive datetimes
-            last_change = self.last_password_change
-            if last_change.tzinfo is None:
-                last_change = last_change.replace(tzinfo=timezone.utc)
-         
-            days_old = (datetime.now(timezone.utc) - last_change).days
-            if days_old < 30:
-                score += 25
-            elif days_old < 60:
-                score += 20
-            elif days_old < 90:
-                score += 15
-            else:
-                score += 5
-        
-        # 2FA enabled (25 points)
-        if self.two_factor_enabled:
-            score += 25
-        
-        # Vault usage (max 25 points)
-        vault_count = len(self.vault_entries)
-        if vault_count > 10:
-            score += 25
-        elif vault_count > 5:
-            score += 15
-        elif vault_count > 0:
-            score += 10
-        
-        # Security settings (25 points)
-        settings_score = 0
-        if self.security_alerts: settings_score += 5
-        if self.login_notifications: settings_score += 5
-        if self.breach_notifications: settings_score += 5
-        if self.recovery_email or self.recovery_phone: settings_score += 10
-        score += settings_score
-        
-        return min(100, score)
+    showNotification(`Switched to ${themePreference} theme`, 'info');
+}
 
-class VaultEntry(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    site = db.Column(db.String(120), nullable=False)
-    username = db.Column(db.String(120), nullable=False)
-    encrypted_password = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(50), default='General')  # NEW
-    notes = db.Column(db.Text, nullable=True)  # NEW
-    
-    # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_accessed = db.Column(db.DateTime)  # NEW
-    
-    # Security
-    access_count = db.Column(db.Integer, default=0)
-    password_strength_score = db.Column(db.Integer, default=0)  # NEW
-    is_compromised = db.Column(db.Boolean, default=False)  # NEW
-    
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    
-    def record_access(self):
-        """Record password access"""
-        self.access_count += 1
-        self.last_accessed = datetime.utcnow()
-        
-        # Log access
-        SecurityLog.create_log(self.user_id, 'PASSWORD_ACCESSED', 
-                              f'Password accessed for {self.site}')
+function updateThemeToggleIcon() {
+    if (elements.themeToggle) {
+        elements.themeToggle.textContent = themePreference === 'dark' ? '🌙' : '☀️';
+        elements.themeToggle.style.transform = 'scale(1.2)';
+        setTimeout(() => {
+            elements.themeToggle.style.transform = 'scale(1)';
+        }, 200);
+    }
+}
 
-# ===== REPLACE SecurityLog MODEL in app.py (around line 270) =====
-
-class SecurityLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # ✅ CHANGED: nullable=True
-    event_type = db.Column(db.String(50), nullable=False)  # LOGIN, BREACH, ACCESS, etc.
-    description = db.Column(db.Text, nullable=False)
-    ip_address = db.Column(db.String(45), nullable=True)
-    user_agent = db.Column(db.Text, nullable=True)
-    severity = db.Column(db.String(20), default='INFO')  # INFO, WARNING, CRITICAL
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    @staticmethod
-    def create_log(user_id, event_type, description, severity='INFO'):
-        """Create a security log entry with proper context handling"""
-        try:
-            from flask import request as flask_request, has_request_context
-            
-            # Default values
-            ip_address = None
-            user_agent = None
-            
-            # Get request data only if we're in a request context
-            if has_request_context():
-                try:
-                    ip_address = flask_request.remote_addr
-                    user_agent = flask_request.headers.get('User-Agent')
-                except:
-                    pass
-            
-            # ✅ ALLOW None user_id for system events
-            # Create log entry
-            log = SecurityLog(
-                user_id=user_id,  # Can be None now!
-                event_type=event_type,
-                description=description,
-                severity=severity,
-                ip_address=ip_address,
-                user_agent=user_agent
-            )
-            
-            db.session.add(log)
-            db.session.commit()
-            
-            return True
-            
-        except Exception as e:
-            try:
-                db.session.rollback()
-            except:
-                pass
-            
-            logger.debug(f"Security log creation failed (non-critical): {e}")
-            return False
-
-
+// ===== ENHANCED EVENT LISTENERS =====
+function initializeEventListeners() {
+    // Password input analyzer
+    if (elements.passwordInput) {
+        elements.passwordInput.addEventListener('input', debounce((e) => {
+            analyzePassword(e.target.value);
+        }, 300));
         
-# Next class starts here (PasswordReset or DeviceFingerprint)
-class PasswordReset(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    reset_token = db.Column(db.String(100), unique=True, nullable=False)
-    reset_method = db.Column(db.String(20), nullable=False)  # 'email' or 'sms'
-    contact_info = db.Column(db.String(120), nullable=False)  # email or phone
-    expires_at = db.Column(db.DateTime, nullable=False)
-    used = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    @staticmethod
-    def create_reset_token(user, method, contact_info):
-        """Create a password reset token"""
-        # Invalidate existing tokens
-        existing_tokens = PasswordReset.query.filter_by(user_id=user.id, used=False).all()
-        for token in existing_tokens:
-            token.used = True
+        elements.passwordInput.addEventListener('focus', () => {
+            if (elements.passwordInput.value) {
+                analyzePassword(elements.passwordInput.value);
+            }
+        });
         
-        # Create new token
-        reset_token = secrets.token_urlsafe(32)
-        reset_request = PasswordReset(
-            user_id=user.id,
-            reset_token=reset_token,
-            reset_method=method,
-            contact_info=contact_info,
-            expires_at=datetime.utcnow() + timedelta(minutes=30)
-        )
-        db.session.add(reset_request)
-        db.session.commit()
-        
-        return reset_token
-    
-    def is_valid(self):
-        """Check if reset token is valid"""
-        return not self.used and datetime.utcnow() < self.expires_at
-
-class DeviceFingerprint(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    device_hash = db.Column(db.String(64), nullable=False)  # SHA256 of device fingerprint
-    device_name = db.Column(db.String(200), nullable=True)
-    is_trusted = db.Column(db.Boolean, default=False)
-    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
-    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
-    ip_address = db.Column(db.String(45), nullable=True)
-    user_agent = db.Column(db.Text, nullable=True)
-    
-    user = db.relationship('User', backref='device_fingerprints')
-
-# --------------------------------------------------------
-# Notification System
-# --------------------------------------------------------
-class NotificationService:
-    @staticmethod
-    def send_email(to_email, subject, body_text, body_html=None):
-        """Send email notification"""
-        try:
-            if not app.config.get('MAIL_USERNAME'):
-                logger.warning("Email not configured - skipping email notification")
-                return False
-                
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = app.config['MAIL_USERNAME']
-            msg['To'] = to_email
-            
-            # Add text part
-            text_part = MIMEText(body_text, 'plain')
-            msg.attach(text_part)
-            
-            # Add HTML part if provided
-            if body_html:
-                html_part = MIMEText(body_html, 'html')
-                msg.attach(html_part)
-            
-            # Send email
-            with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
-                server.starttls()
-                server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
-                server.send_message(msg)
-            
-            logger.info(f"Email sent successfully to {to_email}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
-            return False
-    
-    @staticmethod
-    def send_sms(to_phone, message):
-        """Send SMS notification using Twilio"""
-        try:
-            if not app.config.get('TWILIO_ACCOUNT_SID'):
-                logger.warning("SMS not configured - skipping SMS notification")
-                return False
-            
-            # This is a placeholder - in production, implement actual Twilio integration
-            logger.info(f"SMS would be sent to {to_phone}: {message}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to send SMS to {to_phone}: {e}")
-            return False
-    
-    @staticmethod
-    def notify_user(user, event_type, message, is_critical=False):
-        """Send notification to user based on their preferences"""
-        notifications_sent = []
-        
-        # Determine notification method based on event type and user preferences
-        send_email = (user.email_notifications and user.email) or (user.recovery_email)
-        send_sms = (user.sms_notifications and user.phone) or (user.recovery_phone)
-        
-        # For critical events, always notify
-        if is_critical:
-            send_email = bool(user.email or user.recovery_email)
-            send_sms = bool(user.phone or user.recovery_phone)
-        
-        # Send email notification
-        if send_email:
-            email_address = user.email or user.recovery_email
-            subject = f"VaultGuard Security Alert - {event_type}"
-            
-            html_body = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background: #1a1a1a; color: #ffffff; padding: 20px; text-align: center;">
-                    <h1>🛡️ VaultGuard Security</h1>
-                </div>
-                <div style="padding: 20px; background: #f8f9fa; color: #333;">
-                    <h2>Security Event: {event_type}</h2>
-                    <p>{message}</p>
-                    <p><strong>Time:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
-                    <p><strong>User:</strong> {user.username}</p>
-                    
-                    <div style="margin: 20px 0; padding: 15px; background: #e3f2fd; border-radius: 5px;">
-                        <p><strong>🔒 Security Tip:</strong> If this wasn't you, immediately change your password and enable two-factor authentication.</p>
-                    </div>
-                    
-                    <div style="text-align: center; margin: 20px 0;">
-                        <a href="#" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Security Dashboard</a>
-                    </div>
-                </div>
-                <div style="background: #666; color: #fff; padding: 10px; text-align: center; font-size: 12px;">
-                    <p>VaultGuard - Professional Password Security</p>
-                </div>
-            </body>
-            </html>
-            """
-            
-            if NotificationService.send_email(email_address, subject, message, html_body):
-                notifications_sent.append('email')
-        
-        # Send SMS notification
-        if send_sms:
-            phone_number = user.phone or user.recovery_phone
-            sms_message = f"VaultGuard Alert: {event_type} - {message[:100]}... Time: {datetime.utcnow().strftime('%H:%M UTC')}"
-            
-            if NotificationService.send_sms(phone_number, sms_message):
-                notifications_sent.append('sms')
-        
-        return notifications_sent
-        return bool(notifications_sent)
-
-
-
-# --------------------------------------------------------
-# Device Fingerprinting and Auto-Registration (Optimized)
-# --------------------------------------------------------
-def generate_device_fingerprint(request):
-    """Generate a unique, consistent device fingerprint"""
-    fingerprint_data = {
-        'user_agent': request.headers.get('User-Agent', ''),
-        'accept_language': request.headers.get('Accept-Language', ''),
-        'accept_encoding': request.headers.get('Accept-Encoding', ''),
-        'accept': request.headers.get('Accept', ''),
-        'ip_address': request.remote_addr or ''
+        elements.passwordInput.addEventListener('paste', (e) => {
+            setTimeout(() => {
+                analyzePassword(elements.passwordInput.value);
+            }, 10);
+        });
     }
 
-    fingerprint_string = '|'.join(fingerprint_data.values())
-    device_hash = hashlib.sha256(fingerprint_string.encode()).hexdigest()
-    return device_hash
-
-# ====== FIX 2: DeviceFingerprint Update ======
-def register_or_update_device(user, request):
-    """Register new device automatically or update existing one"""
-    try:
-        device_hash = generate_device_fingerprint(request)
-        session['device_hash'] = device_hash
-
-        # Check if device exists
-        device = DeviceFingerprint.query.filter_by(
-            user_id=user.id,
-            device_hash=device_hash
-        ).first()
-
-        if device:
-            # Update timestamp for existing device
-            device.last_seen = datetime.now(timezone.utc)  # FIXED
-            db.session.commit()
-            return device
-
-        # New device detected
-        user_agent = request.headers.get('User-Agent', 'Unknown Device')
-        ip_address = request.remote_addr or 'Unknown IP'
-
-        new_device = DeviceFingerprint(
-            user_id=user.id,
-            device_hash=device_hash,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            is_trusted=False,
-            first_seen=datetime.now(timezone.utc),  # FIXED
-            last_seen=datetime.now(timezone.utc)   # FIXED
-        )
-        db.session.add(new_device)
-        db.session.commit()
-
-        # Log and notify user
-        SecurityLog.create_log(
-            user.id,
-            'NEW_DEVICE_REGISTERED',
-            f'New device detected: {user_agent} ({ip_address})'
-        )
-
-        NotificationService.notify_user(
-            user,
-            "🚨 New Device Login Detected",
-            f"A new device just accessed your account from IP: {ip_address}\nUser-Agent: {user_agent}\n\nIf this wasn't you, please change your password immediately.",
-            is_critical=True
-        )
-
-        return new_device
-
-    except Exception as e:
-        logger.error(f"Device registration failed: {str(e)}")
-        db.session.rollback()
-        return None
-
-
-
-# --------------------------------------------------------
-# Automatic Device Registration (NEW)
-# --------------------------------------------------------
-@app.before_request
-def register_device():
-    try:
-        if current_user.is_authenticated:
-            register_or_update_device(current_user, request)
-    except Exception as e:
-        logger.error(f"Device registration error: {str(e)}")
-        db.session.rollback()
-
-
-
-# --------------------------------------------------------
-# Security Functions (Enhanced)
-# --------------------------------------------------------
-def validate_username(username):
-    if not username or len(username.strip()) < 3:
-        return False, "Username must be at least 3 characters long"
-    if len(username) > 50:
-        return False, "Username must be less than 50 characters"
-    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
-        return False, "Username can only contain letters, numbers, dots, hyphens, and underscores"
-    return True, ""
-
-def validate_email(email):
-    if not email:
-        return False, "Email is required"
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if not re.match(pattern, email):
-        return False, "Invalid email format"
-    return True, ""
-
-def validate_phone(phone):
-    if not phone:
-        return True, ""  # Phone is optional
-    # Remove non-digits
-    digits_only = re.sub(r'\D', '', phone)
-    if len(digits_only) < 10 or len(digits_only) > 15:
-        return False, "Phone number must be 10-15 digits"
-    return True, ""
-
-def validate_password_strength(password):
-    if len(password) < 12:
-        return False, "Password must be at least 12 characters long"
-    if len(password) > 128:
-        return False, "Password must be less than 128 characters"
+    // Password control buttons
+    setupPasswordControls();
     
-    has_upper = any(c.isupper() for c in password)
-    has_lower = any(c.islower() for c in password)
-    has_digit = any(c.isdigit() for c in password)
-    has_symbol = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?~`' for c in password)
+    // Generator controls
+    setupGeneratorControls();
     
-    if not (has_upper and has_lower and has_digit and has_symbol):
-        return False, "Password must contain uppercase, lowercase, numbers, and symbols"
+    // Authentication controls
+    setupAuthenticationControls();
     
-    return True, ""
-
-def sanitize_input(text):
-    if not text:
-        return ""
-    return bleach.clean(text.strip(), tags=[], strip=True)[:200]
-
-def encrypt_password(password, key):
-    try:
-        f = Fernet(key)
-        data = json.dumps({
-            'password': password,
-            'timestamp': datetime.utcnow().isoformat(),
-            'checksum': secrets.token_hex(16)
-        })
-        encrypted = f.encrypt(data.encode())
-        return base64.urlsafe_b64encode(encrypted).decode()
-    except Exception as e:
-        logger.error(f"Encryption failed: {str(e)}")
-        raise
-
-def decrypt_password(encrypted_password, key):
-    try:
-        f = Fernet(key)
-        encrypted_data = base64.urlsafe_b64decode(encrypted_password.encode())
-        decrypted_data = f.decrypt(encrypted_data)
-        data = json.loads(decrypted_data.decode())
-        return data['password']
-    except Exception as e:
-        logger.error(f"Decryption failed: {str(e)}")
-        raise
-
-# --------------------------------------------------------
-# Enhanced HaveIBeenPwned Integration
-# --------------------------------------------------------
-def check_password_breach_advanced(password):
-    """Enhanced breach checking with k-anonymity"""
-    try:
-        # Generate SHA-1 hash
-        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
-        prefix = sha1_hash[:5]
-        suffix = sha1_hash[5:]
-        
-        # Query HaveIBeenPwned API
-        url = f"https://api.pwnedpasswords.com/range/{prefix}"
-        headers = {'Add-Padding': 'true'}
-        
-        response = requests.get(url, headers=headers, timeout=5)
-        
-        if response.status_code == 200:
-            # Parse response
-            for line in response.text.splitlines():
-                parts = line.split(':')
-                if len(parts) == 2 and parts[0] == suffix:
-                    count = int(parts[1])
-                    return True, count
-            return False, 0
-        else:
-            # Fallback to local analysis if API fails
-            return analyze_password_patterns(password)
-            
-    except Exception as e:
-        logger.warning(f"Breach check failed, using fallback: {e}")
-        return analyze_password_patterns(password)
-
-def analyze_password_patterns(password):
-    """Fallback pattern analysis when API unavailable"""
-    # Common vulnerable patterns
-    high_risk_passwords = [
-        'password', '123456', 'qwerty', 'abc123', 'letmein', 
-        'monkey', 'dragon', 'princess', 'welcome', 'sunshine',
-        'master', 'shadow', 'football', 'baseball', 'superman',
-        'trustno1', 'admin', 'login', 'guest', 'root'
-    ]
+    // Vault management
+    setupVaultControls();
     
-    critical_patterns = [
-        '123456', 'qwerty', 'p@ssw0rd', 'passw0rd', '1234567!',
-        'password!', 'abcd1234', '1q2w3e4r', 'qwer1234'
-    ]
+    // Enhanced search and sort
+    setupEnhancedVaultControls();
     
-    keyboard_sequences = ['qwert', 'asdf', 'zxcv', '1234', '5678']
+    // Dashboard controls
+    setupDashboardControls();
     
-    lower_password = password.lower()
+    // Security monitoring
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('keydown', handleKeyboardShortcuts);
+}
+
+function setupPasswordControls() {
+    if (elements.toggleVisibility) {
+        elements.toggleVisibility.addEventListener('click', togglePasswordVisibility);
+    }
+    if (elements.copyPassword) {
+        elements.copyPassword.addEventListener('click', copyPasswordToClipboard);
+    }
+    if (elements.clearPassword) {
+        elements.clearPassword.addEventListener('click', clearPasswordInput);
+    }
+    if (elements.generatePassword) {
+        elements.generatePassword.addEventListener('click', generateAndAnalyzePassword);
+    }
+    if (elements.pauseBtn) {
+        elements.pauseBtn.addEventListener('click', toggleAnalysis);
+    }
+}
+
+function setupGeneratorControls() {
+    if (elements.lengthSlider && elements.lengthValueDisplay) {
+        elements.lengthSlider.addEventListener('input', (e) => {
+            updateLengthDisplay(parseInt(e.target.value));
+        });
+    }
     
-    if lower_password in [p.lower() for p in high_risk_passwords]:
-        return True, random.randint(1000000, 10000000)
-    elif any(pattern.lower() in lower_password for pattern in critical_patterns):
-        return True, random.randint(100000, 2000000)
-    elif any(seq in lower_password for seq in keyboard_sequences):
-        return True, random.randint(50000, 500000)
-    elif len(password) < 8:
-        return True, random.randint(500000, 5000000)
+    if (elements.generateBtn) {
+        elements.generateBtn.addEventListener('click', generateNewPassword);
+    }
     
-    return False, 0
-
-# --------------------------------------------------------
-# Security Middleware (Enhanced)
-# --------------------------------------------------------
-@app.before_request
-def security_checks():
-    # Force HTTPS in production
-    if not request.is_secure and os.environ.get('FLASK_ENV') == 'production':
-        return redirect(request.url.replace('http://', 'https://'))
+    if (elements.copyGenerated) {
+        elements.copyGenerated.addEventListener('click', copyGeneratedPassword);
+    }
     
-    # Check for suspicious activity
-    if request.endpoint and request.endpoint.startswith('api_'):
-        # Rate limiting check (implement with Redis in production)
-        pass
-
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:;"
+    if (elements.useGenerated) {
+        elements.useGenerated.addEventListener('click', useGeneratedPassword);
+    }
     
-    if request.is_secure:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    
-    return response
-
-# --------------------------------------------------------
-# Create Database
-# --------------------------------------------------------
-with app.app_context():
-    db.create_all()
-
-
-# --------------------------------------------------------
-# Main Routes
-# --------------------------------------------------------
-@app.route('/')
-def home():
-    return render_template('index.html', logged_in=current_user.is_authenticated)
-
-@app.route('/terms')
-def terms():
-    return render_template('terms.html')
-
-@app.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
-
-@app.route('/security')
-def security():
-    return render_template('security.html')
-
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    return render_template('dashboard.html')
-
-@app.route('/logout')
-@login_required
-def logout():
-    username = current_user.username
-    SecurityLog.create_log(current_user.id, 'LOGOUT', f'User {username} logged out')
-    logout_user()
-    session.clear()
-    logger.info(f"User {username} logged out")
-    return redirect(url_for('home'))
-
-# --------------------------------------------------------
-# Enhanced Authentication API Routes
-# --------------------------------------------------------
-# --------------------------------------------------------
-# Secure AI-Enhanced Login Route (FINAL FIXED VERSION)
-# --------------------------------------------------------
-@app.route('/api/login', methods=["POST"])
-def api_login():
-    try:
-        data = request.get_json()
-        username = sanitize_input(data.get("username", ""))
-        password = data.get("password", "")
-
-        if not username or not password:
-            return jsonify({
-                'success': False,
-                'message': 'Username and password required'
-            }), 400
-
-        # USER LOOKUP
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            SecurityLog.create_log(
-                None, 'LOGIN_FAILED',
-                f'Failed login for non-existent user: {username}', 'WARNING'
-            )
-            return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
-
-        # ACCOUNT LOCK CHECK
-        if user.is_account_locked():
-            SecurityLog.create_log(
-                user.id, 'LOGIN_BLOCKED',
-                'Login attempt on locked account', 'WARNING'
-            )
-            return jsonify({
-                'success': False,
-                'message': 'Account locked. Try again later.'
-            }), 423
-
-        # PASSWORD CHECK - FAILED
-        if not user.check_password(password):
-            user.failed_login_attempts += 1
-            db.session.commit()
-
-            # Auto-lock after 3 failed attempts
-            if user.failed_login_attempts >= 3:
-                user.lock_account(60)
-                db.session.commit()
-
-                if user.security_alerts:
-                    NotificationService.notify_user(
-                        user,
-                        'Account Locked 🚨',
-                        f'Your account was locked after {user.failed_login_attempts} failed attempts.',
-                        is_critical=True
-                    )
-
-            SecurityLog.create_log(
-                user.id, 'LOGIN_FAILED',
-                f'Failed login attempt #{user.failed_login_attempts}', 'WARNING'
-            )
-
-            return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
-
-        # ✅ PASSWORD CORRECT - BUT DON'T RESET COUNTERS YET!
-
-        # 🔥 DEBUG: Print current failed attempts
-        logger.info("=" * 70)
-        logger.info("🔍 PRE-AI ANALYSIS DEBUG")
-        logger.info(f"User: {user.username}")
-        logger.info(f"Failed attempts in DB: {user.failed_login_attempts}")
-        logger.info(f"About to call AI Guardian...")
-        logger.info("=" * 70)
-        
-        # 🤖 AI GUARDIAN ANALYSIS - BEFORE RESETTING COUNTERS!
-        threat_analysis = None
-        ai_message = None
-        
-        if ai_guardian:
-            try:
-                # AI sees the ACTUAL failed_login_attempts count
-                analysis_result = ai_guardian.analyze_login_attempt(user, request, is_success=True)
-                threat_analysis = analysis_result.get('threat_analysis', {})
-                
-                # Generate user-friendly message
-                threat_level = threat_analysis.get('threat_level', 'safe')
-                threat_score = threat_analysis.get('threat_score', 0)
-                reasons = threat_analysis.get('reasons', [])
-                
-                if threat_level == 'critical':
-                    ai_message = f"🚨 CRITICAL: Threat score {threat_score}/100. {', '.join(reasons[:2])}"
-                elif threat_level == 'suspicious':
-                    ai_message = f"⚠️ Suspicious: Threat score {threat_score}/100. {', '.join(reasons[:2])}"
-                else:
-                    ai_message = f"✅ Safe: Login pattern normal (score {threat_score}/100)"
-                    
-            except Exception as ai_error:
-                logger.warning(f"AI analysis skipped: {ai_error}")
-                ai_message = "AI analysis unavailable"
-        
-        # NOW reset counters AFTER AI analysis
-        user.unlock_account()
-        user.failed_login_attempts = 0
-        db.session.commit()
-
-        # DEVICE MANAGEMENT
-        device = register_or_update_device(user, request)
-        if device:
-            device.is_trusted = True
-            db.session.commit()
-
-        # CREATE SESSION
-        login_user(user, remember=False)
-        session['logged_in'] = True
-        session['username'] = user.username
-        session['user_id'] = user.id
-        session['device_hash'] = device.device_hash if device else None
-        session.permanent = True
-
-        # NEW DEVICE ALERT
-        if device and not device.is_trusted and user.login_notifications:
-            NotificationService.notify_user(
-                user,
-                "New Device Login Detected 🚨",
-                f"A new device logged in.\nDevice: {device.user_agent}\nIP: {device.ip_address}",
-                is_critical=True
-            )
-
-        # Log success
-        SecurityLog.create_log(
-            user.id, 'LOGIN_SUCCESS',
-            'User logged in successfully', 'INFO'
-        )
-
-        # BUILD RESPONSE
-        response_data = {
-            'success': True,
-            'message': 'Secure login successful!',
-            'salt': user.encryption_salt,
-            'username': user.username,
-            'security_score': user.get_security_score(),
-            'device_trusted': device.is_trusted if device else False
+    const checkboxes = [elements.includeUpper, elements.includeLower, elements.includeNumbers, elements.includeSymbols];
+    checkboxes.forEach(checkbox => {
+        if (checkbox) {
+            checkbox.addEventListener('change', () => {
+                updatePasswordGeneratorSettings();
+                validateGeneratorSettings();
+            });
         }
+    });
+}
 
-        # 🤖 ADD AI THREAT INFO
-        if threat_analysis:
-            response_data['ai_threat_analysis'] = {
-                'threat_score': threat_analysis.get('threat_score', 0),
-                'threat_level': threat_analysis.get('threat_level', 'safe'),
-                'reasons': threat_analysis.get('reasons', []),
-                'message': ai_message
+function setupAuthenticationControls() {
+    if (elements.loginBtn) {
+        elements.loginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openAuthModal();
+        });
+    }
+    
+    if (elements.loginPromptBtn) {
+        elements.loginPromptBtn.addEventListener('click', openAuthModal);
+    }
+    
+    if (elements.closeModal) {
+        elements.closeModal.addEventListener('click', closeAuthModal);
+    }
+    
+    if (elements.authSwitchLink) {
+        elements.authSwitchLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            setAuthMode(!isLoginMode);
+        });
+    }
+    
+    if (elements.authForm) {
+        elements.authForm.addEventListener('submit', handleAuth);
+    }
+    
+    if (elements.authModal) {
+        elements.authModal.addEventListener('click', (e) => {
+            if (e.target === elements.authModal) {
+                closeAuthModal();
+            }
+        });
+    }
+}
+
+function setupVaultControls() {
+    if (elements.savePasswordBtn) {
+        elements.savePasswordBtn.addEventListener('click', savePassword);
+    }
+}
+
+function setupEnhancedVaultControls() {
+    if (elements.vaultSearch) {
+        elements.vaultSearch.addEventListener('input', debounce((e) => {
+            filterVaultEntries(e.target.value);
+        }, 300));
+        
+        elements.vaultSearch.addEventListener('input', function() {
+            if (elements.clearSearch) {
+                elements.clearSearch.style.display = this.value.length > 0 ? 'block' : 'none';
+            }
+        });
+    }
+    
+    if (elements.clearSearch) {
+        elements.clearSearch.addEventListener('click', () => {
+            elements.vaultSearch.value = '';
+            elements.clearSearch.style.display = 'none';
+            filterVaultEntries('');
+            elements.vaultSearch.focus();
+        });
+    }
+    
+    if (elements.vaultSort) {
+        elements.vaultSort.addEventListener('change', (e) => {
+            sortVaultEntries(e.target.value);
+        });
+    }
+    
+    if (elements.exportVault) {
+        elements.exportVault.addEventListener('click', exportVaultData);
+    }
+    
+    if (elements.auditVault) {
+        elements.auditVault.addEventListener('click', runSecurityAudit);
+    }
+}
+
+function setupDashboardControls() {
+    if (elements.securityDashboardBtn) {
+        elements.securityDashboardBtn.addEventListener('click', toggleSecurityDashboard);
+    }
+    
+    if (elements.closeDashboard) {
+        elements.closeDashboard.addEventListener('click', () => {
+            elements.securityDashboard.style.display = 'none';
+        });
+    }
+}
+
+// ===== ENHANCED PASSWORD ANALYSIS =====
+function analyzePassword(password) {
+    if (!password || !analysisEnabled) {
+        hideAnalysisSection();
+        resetPasswordPolicyIcons();
+        resetStrengthMeter();
+        return;
+    }
+
+    showAnalysisSection();
+    
+    // Enhanced strength calculation
+    let score = 0;
+    let strength = 'Critical Vulnerability';
+    let strengthClass = 'critical';
+    let recommendations = [];
+    
+    // Character type checks
+    const hasLength = password.length >= 12;
+    const hasMinLength = password.length >= 8;
+    const hasLower = /[a-z]/.test(password);
+    const hasUpper = /[A-Z]/.test(password);
+    const hasDigit = /[0-9]/.test(password);
+    const hasSymbol = /[^A-Za-z0-9]/.test(password);
+    const hasLongLength = password.length >= 16;
+    const hasExtraLength = password.length >= 20;
+    const hasFortressLength = password.length >= 32;
+
+    // Base scoring with enhanced weights
+    if (hasMinLength) score += 10;
+    if (hasLength) score += 15;
+    if (hasLower) score += 10;
+    if (hasUpper) score += 10;
+    if (hasDigit) score += 10;
+    if (hasSymbol) score += 20;
+    if (hasLongLength) score += 15;
+    if (hasExtraLength) score += 15;
+    if (hasFortressLength) score += 20;
+
+    // Advanced pattern analysis
+    const analysis = performAdvancedPasswordAnalysis(password);
+    score += analysis.bonusPoints;
+    score -= analysis.penaltyPoints;
+    recommendations = analysis.recommendations;
+
+    // Ensure score is within bounds
+    score = Math.max(0, Math.min(100, score));
+    
+    // Determine strength level
+    const strengthLevels = [
+        { min: 95, label: 'Fortress Grade', class: 'fortress' },
+        { min: 85, label: 'Military Grade', class: 'military' },
+        { min: 70, label: 'Strong', class: 'strong' },
+        { min: 55, label: 'Good', class: 'good' },
+        { min: 40, label: 'Fair', class: 'fair' },
+        { min: 25, label: 'Weak', class: 'weak' },
+        { min: 0, label: 'Critical Vulnerability', class: 'critical' }
+    ];
+    
+    for (const level of strengthLevels) {
+        if (score >= level.min) {
+            strength = level.label;
+            strengthClass = level.class;
+            break;
+        }
+    }
+
+    // Update UI
+    updateStrengthMeter(score, strengthClass, strength);
+    updateCrackTimeEstimate(score);
+    updatePasswordPolicyIcons(hasLength, hasLower, hasUpper, hasDigit, hasSymbol);
+    updatePasswordMetrics(password, score);
+    
+    // Check password against breach database
+    checkPasswordStrengthAPI(password);
+    
+    // Show recommendations
+    displayPasswordRecommendations(recommendations);
+}
+
+function performAdvancedPasswordAnalysis(password) {
+    let bonusPoints = 0;
+    let penaltyPoints = 0;
+    let recommendations = [];
+    
+    // Common patterns that reduce security
+    const commonPatterns = ['123', 'abc', 'qwe', 'pass', 'admin', 'user', 'login', 'welcome'];
+    const keyboardPatterns = ['qwert', 'asdf', 'zxcv', 'yuiop', 'hjkl', 'bnm'];
+    const weakSequences = ['1234', '4321', 'abcd', 'dcba'];
+    
+    const lowerPassword = password.toLowerCase();
+    
+    if (commonPatterns.some(pattern => lowerPassword.includes(pattern))) {
+        penaltyPoints += 25;
+        recommendations.push('Avoid common words like "password", "admin", "123"');
+    }
+    
+    if (keyboardPatterns.some(pattern => lowerPassword.includes(pattern))) {
+        penaltyPoints += 30;
+        recommendations.push('Avoid keyboard patterns like "qwerty" or "asdf"');
+    }
+    
+    if (weakSequences.some(seq => lowerPassword.includes(seq))) {
+        penaltyPoints += 20;
+        recommendations.push('Avoid sequential characters like "1234" or "abcd"');
+    }
+    
+    // Check for repeated characters
+    const repeatedChars = /(.)\1{2,}/.test(password);
+    if (repeatedChars) {
+        penaltyPoints += 20;
+        recommendations.push('Avoid repeating the same character multiple times');
+    }
+    
+    // Character diversity bonus
+    const uniqueChars = new Set(password).size;
+    const charsetDiversity = uniqueChars / password.length;
+    
+    if (charsetDiversity >= 0.8) {
+        bonusPoints += 15;
+    } else if (charsetDiversity >= 0.7) {
+        bonusPoints += 10;
+    } else if (charsetDiversity < 0.5) {
+        penaltyPoints += 10;
+        recommendations.push('Use more diverse characters');
+    }
+    
+    // Date pattern detection
+    const currentYear = new Date().getFullYear();
+    const yearPattern = new RegExp(`(${currentYear}|${currentYear-1}|${currentYear-2}|19\\d\\d|20\\d\\d)`);
+    if (yearPattern.test(password)) {
+        penaltyPoints += 15;
+        recommendations.push('Avoid using years or dates in passwords');
+    }
+    
+    // Length bonuses
+    if (password.length >= 24) bonusPoints += 10;
+    if (password.length >= 28) bonusPoints += 10;
+    if (password.length >= 40) bonusPoints += 15;
+    
+    return {
+        bonusPoints,
+        penaltyPoints,
+        recommendations: recommendations.slice(0, 3)
+    };
+}
+
+function resetStrengthMeter() {
+    if (elements.strengthFill) {
+        elements.strengthFill.style.width = '0%';
+        elements.strengthFill.className = 'strength-fill';
+        elements.strengthFill.style.animation = '';
+        elements.strengthFill.style.boxShadow = '';
+    }
+    
+    if (elements.strengthText) {
+        elements.strengthText.textContent = '-';
+        elements.strengthText.className = 'strength-text';
+    }
+    
+    if (elements.crackTime) {
+        elements.crackTime.textContent = '-';
+    }
+    
+    if (elements.breachStatus) {
+        elements.breachStatus.innerHTML = '-';
+    }
+    
+    if (elements.entropyValue) {
+        elements.entropyValue.textContent = '- bits';
+    }
+    
+    if (elements.lengthValue) {
+        elements.lengthValue.textContent = '- chars';
+    }
+}
+
+function updatePasswordMetrics(password, score) {
+    // Update entropy display
+    if (elements.entropyValue) {
+        const entropy = calculateEntropy(password);
+        elements.entropyValue.textContent = `${entropy.toFixed(1)} bits`;
+        elements.entropyValue.style.animation = 'fadeIn 0.4s ease-out';
+    }
+    
+    // Update length display
+    if (elements.lengthValue) {
+        elements.lengthValue.textContent = `${password.length} chars`;
+        elements.lengthValue.style.animation = 'fadeIn 0.4s ease-out';
+    }
+}
+
+function calculateEntropy(password) {
+    let charsetSize = 0;
+    if (/[a-z]/.test(password)) charsetSize += 26;
+    if (/[A-Z]/.test(password)) charsetSize += 26;
+    if (/[0-9]/.test(password)) charsetSize += 10;
+    if (/[^a-zA-Z0-9]/.test(password)) charsetSize += 32;
+    
+    return Math.log2(Math.pow(charsetSize, password.length));
+}
+
+// ===== ENHANCED UI UPDATE FUNCTIONS =====
+function updateStrengthMeter(score, strengthClass, strength) {
+    if (elements.strengthFill) {
+        elements.strengthFill.style.width = score + '%';
+        
+        // Remove all previous strength classes
+        const strengthClasses = ['critical', 'weak', 'fair', 'good', 'strong', 'military', 'fortress'];
+        elements.strengthFill.classList.remove(...strengthClasses);
+        elements.strengthFill.classList.add(strengthClass);
+        
+        // Add pulsing animation for high-security passwords
+        if (score >= 85) {
+            elements.strengthFill.style.animation = 'strengthPulse 2s ease-in-out infinite';
+        } else {
+            elements.strengthFill.style.animation = '';
+        }
+    }
+    
+    if (elements.strengthText) {
+        elements.strengthText.textContent = strength;
+        elements.strengthText.className = `strength-text ${strengthClass}`;
+        elements.strengthText.style.animation = 'fadeIn 0.3s ease-out';
+    }
+}
+
+function updateCrackTimeEstimate(score) {
+    const crackTimes = [
+        'instantly', 'milliseconds', 'seconds', 'minutes', 
+        'hours', 'days', 'weeks', 'months', 'years', 
+        'decades', 'centuries', 'millennia', 'geological ages'
+    ];
+    
+    const timeIndex = Math.min(Math.floor(score / 8), crackTimes.length - 1);
+    
+    if (elements.crackTime) {
+        elements.crackTime.textContent = crackTimes[timeIndex];
+        elements.crackTime.style.animation = 'fadeIn 0.4s ease-out';
+    }
+}
+
+function updatePasswordPolicyIcons(hasLength, hasLower, hasUpper, hasDigit, hasSymbol) {
+    updatePolicyIcon(elements.lengthIcon, hasLength);
+    updatePolicyIcon(elements.lowerIcon, hasLower);
+    updatePolicyIcon(elements.upperIcon, hasUpper);
+    updatePolicyIcon(elements.digitIcon, hasDigit);
+    updatePolicyIcon(elements.symbolIcon, hasSymbol);
+}
+
+function updatePolicyIcon(icon, isValid) {
+    if (!icon) return;
+    
+    icon.style.transition = 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+    
+    if (isValid) {
+        icon.className = 'policy-icon valid';
+        icon.textContent = '✓';
+        icon.style.color = '#2ed573';
+        icon.style.backgroundColor = 'rgba(46, 213, 115, 0.15)';
+        icon.style.border = '2px solid rgba(46, 213, 115, 0.3)';
+        icon.style.transform = 'scale(1.1)';
+        
+        setTimeout(() => { 
+            icon.style.transform = 'scale(1)'; 
+        }, 200);
+    } else {
+        icon.className = 'policy-icon invalid';
+        icon.textContent = '✗';
+        icon.style.color = '#ff4757';
+        icon.style.backgroundColor = 'rgba(255, 71, 87, 0.15)';
+        icon.style.border = '2px solid rgba(255, 71, 87, 0.3)';
+    }
+}
+
+function resetPasswordPolicyIcons() {
+    const icons = [elements.lengthIcon, elements.lowerIcon, elements.upperIcon, elements.digitIcon, elements.symbolIcon];
+    icons.forEach(icon => {
+        if (icon) {
+            icon.className = 'policy-icon';
+            icon.textContent = '○';
+            icon.style.color = '#6c757d';
+            icon.style.backgroundColor = 'rgba(108, 117, 125, 0.1)';
+        }
+    });
+}
+
+function showAnalysisSection() {
+    if (elements.strengthSection) {
+        elements.strengthSection.style.display = 'block';
+        elements.strengthSection.style.animation = 'fadeIn 0.3s ease-out';
+    }
+    if (elements.analysisResults) {
+        elements.analysisResults.style.display = 'grid';
+        elements.analysisResults.style.animation = 'fadeIn 0.4s ease-out';
+    }
+    if (elements.policySection) {
+        elements.policySection.style.display = 'block';
+        elements.policySection.style.animation = 'fadeIn 0.5s ease-out';
+    }
+}
+
+function hideAnalysisSection() {
+    const sections = [elements.strengthSection, elements.analysisResults, elements.policySection];
+    sections.forEach(section => {
+        if (section) {
+            section.style.display = 'none';
+            section.style.animation = '';
+        }
+    });
+    
+    const recommendationsElement = document.getElementById('passwordRecommendations');
+    if (recommendationsElement) {
+        recommendationsElement.style.display = 'none';
+    }
+}
+
+function displayPasswordRecommendations(recommendations) {
+    const recommendationsElement = document.getElementById('passwordRecommendations');
+    if (recommendationsElement && recommendations.length > 0) {
+        recommendationsElement.innerHTML = `
+            <div class="recommendations-header">💡 Security Recommendations:</div>
+            <ul class="recommendations-list">
+                ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
+            </ul>
+        `;
+        recommendationsElement.style.display = 'block';
+        recommendationsElement.style.animation = 'fadeIn 0.5s ease-out';
+    } else if (recommendationsElement) {
+        recommendationsElement.style.display = 'none';
+    }
+}
+
+// ===== ENHANCED BREACH CHECKING =====
+async function checkPasswordStrengthAPI(password) {
+    try {
+        performanceMetrics.apiCallCount++;
+        
+        const response = await fetch('/api/check_password', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ password: password })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                updateBreachStatus(data.breached, data.count, data.security_level);
+                updateAdvancedMetrics(data);
+            }
+        } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('Password strength check failed:', error);
+        if (elements.breachStatus) {
+            elements.breachStatus.innerHTML = '<span style="color: var(--text-secondary);">⚠️ Unable to check breach status</span>';
+        }
+    }
+}
+
+function updateBreachStatus(isBreached, count, securityLevel) {
+    if (!elements.breachStatus) return;
+    
+    if (isBreached) {
+        let warningLevel = 'COMPROMISED';
+        let warningColor = '#ff4757';
+        
+        switch (securityLevel) {
+            case 'critical':
+                warningLevel = 'CRITICAL RISK';
+                warningColor = '#ff4757';
+                break;
+            case 'high_risk':
+                warningLevel = 'HIGH RISK';
+                warningColor = '#ff6348';
+                break;
+            case 'medium_risk':
+                warningLevel = 'MEDIUM RISK';
+                warningColor = '#ffa502';
+                break;
+            default:
+                warningLevel = 'COMPROMISED';
+                warningColor = '#ff4757';
+        }
+        
+        elements.breachStatus.innerHTML = `
+            <span class="breach-warning" style="color: ${warningColor}; animation: breachPulse 1.5s ease-in-out infinite; font-weight: 700;">
+                🚨 ${warningLevel}: Found in ${count.toLocaleString()} breaches!
+            </span>`;
+    } else {
+        let securityText = 'SECURE';
+        let securityColor = '#2ed573';
+        
+        switch (securityLevel) {
+            case 'fortress':
+                securityText = 'FORTRESS LEVEL';
+                securityColor = '#2ed573';
+                break;
+            case 'military':
+                securityText = 'MILITARY GRADE';
+                securityColor = '#58a6ff';
+                break;
+            case 'strong':
+                securityText = 'STRONG SECURITY';
+                securityColor = '#2ed573';
+                break;
+            default:
+                securityText = 'SECURE';
+                securityColor = '#2ed573';
+        }
+        
+        elements.breachStatus.innerHTML = `
+            <span class="breach-safe" style="color: ${securityColor}; font-weight: 700;">
+                ✅ ${securityText}: Not found in known breaches
+            </span>`;
+    }
+}
+
+function updateAdvancedMetrics(data) {
+    // Update additional metrics if available
+    if (data.entropy && elements.entropyValue) {
+        elements.entropyValue.textContent = `${data.entropy.toFixed(1)} bits`;
+    }
+}
+
+// ===== PASSWORD CONTROL FUNCTIONS =====
+function togglePasswordVisibility() {
+    if (!elements.passwordInput || !elements.toggleVisibility) return;
+    
+    const type = elements.passwordInput.type === 'password' ? 'text' : 'password';
+    elements.passwordInput.type = type;
+    elements.toggleVisibility.textContent = type === 'password' ? '👁️' : '🙈';
+    elements.toggleVisibility.style.transform = 'scale(1.1)';
+    
+    setTimeout(() => { 
+        elements.toggleVisibility.style.transform = 'scale(1)'; 
+    }, 150);
+}
+
+async function copyPasswordToClipboard() {
+    if (!elements.passwordInput?.value) {
+        showNotification('No password to copy', 'warning');
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(elements.passwordInput.value);
+        showNotification('Password copied securely!', 'success');
+        
+        // Security: Clear clipboard after 30 seconds
+        setTimeout(() => {
+            navigator.clipboard.writeText('').catch(() => {});
+        }, 30000);
+    } catch (err) {
+        console.error('Clipboard error:', err);
+        showNotification('Failed to copy password', 'error');
+    }
+}
+
+function clearPasswordInput() {
+    if (elements.passwordInput) {
+        elements.passwordInput.value = '';
+        analyzePassword('');
+        elements.passwordInput.focus();
+        showNotification('Password cleared securely', 'info');
+    }
+}
+
+function generateAndAnalyzePassword() {
+    const generatedPwd = generateRandomPassword();
+    if (elements.passwordInput) {
+        elements.passwordInput.value = generatedPwd;
+        analyzePassword(generatedPwd);
+        showNotification('Secure password generated and analyzed!', 'success');
+    }
+}
+
+function toggleAnalysis() {
+    analysisEnabled = !analysisEnabled;
+    
+    if (elements.pauseBtn) {
+        elements.pauseBtn.textContent = analysisEnabled ? '⏸️' : '▶️';
+        elements.pauseBtn.title = analysisEnabled ? 'Pause analysis' : 'Resume analysis';
+        elements.pauseBtn.style.transform = 'scale(1.1)';
+        setTimeout(() => { elements.pauseBtn.style.transform = 'scale(1)'; }, 150);
+    }
+    
+    if (!analysisEnabled) {
+        hideAnalysisSection();
+        showNotification('Password analysis paused', 'info');
+    } else {
+        analyzePassword(elements.passwordInput?.value || '');
+        showNotification('Password analysis resumed', 'info');
+    }
+}
+
+// ===== ENHANCED AUTHENTICATION =====
+function openAuthModal() {
+    if (elements.authModal) {
+        elements.authModal.classList.add('show');
+        elements.authModal.style.animation = 'modalFadeIn 0.3s ease-out';
+        setAuthMode(isLoginMode);
+        
+        // Focus on username field
+        setTimeout(() => {
+            if (elements.authUsername) {
+                elements.authUsername.focus();
+            }
+        }, 100);
+    }
+}
+
+function closeAuthModal() {
+    if (elements.authModal) {
+        elements.authModal.style.animation = 'modalFadeOut 0.3s ease-out';
+        setTimeout(() => {
+            elements.authModal.classList.remove('show');
+        }, 300);
+        
+        // Reset form
+        if (elements.authForm) {
+            elements.authForm.reset();
+        }
+        
+        // Clear any error states
+        clearAuthErrors();
+    }
+}
+
+function setAuthMode(loginMode) {
+    isLoginMode = loginMode;
+    
+    if (elements.authTitle && elements.authSubmit && elements.authSwitchText && elements.authSwitchLink) {
+        if (isLoginMode) {
+            elements.authTitle.textContent = '🔐 VaultGuard Secure Access';
+            elements.authSubmit.textContent = 'Secure Login';
+            elements.authSwitchText.textContent = "Don't have an account?";
+            elements.authSwitchLink.textContent = 'Create Account';
+            
+            // Hide optional fields for login
+            if (elements.authEmail) elements.authEmail.style.display = 'none';
+            if (elements.authPhone) elements.authPhone.style.display = 'none';
+        } else {
+            elements.authTitle.textContent = '🛡️ Create Secure Account';
+            elements.authSubmit.textContent = 'Create Account';
+            elements.authSwitchText.textContent = 'Already have an account?';
+            elements.authSwitchLink.textContent = 'Login';
+            
+            // Show optional fields for registration
+            if (elements.authEmail) elements.authEmail.style.display = 'block';
+            if (elements.authPhone) elements.authPhone.style.display = 'block';
+        }
+    }
+    
+    // Clear any previous errors
+    clearAuthErrors();
+}
+
+function clearAuthErrors() {
+    const errorElements = document.querySelectorAll('.auth-error');
+    errorElements.forEach(el => el.remove());
+    
+    // Reset input field styles
+    [elements.authUsername, elements.authEmail, elements.authPhone, elements.authPassword].forEach(input => {
+        if (input) {
+            input.style.borderColor = '';
+            input.classList.remove('error');
+        }
+    });
+}
+
+function showAuthError(message, targetElement = null) {
+    clearAuthErrors();
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'auth-error';
+    errorDiv.style.cssText = `
+        color: #ff4757;
+        background: rgba(255, 71, 87, 0.1);
+        border: 1px solid rgba(255, 71, 87, 0.3);
+        padding: 0.75rem;
+        border-radius: 6px;
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        animation: fadeIn 0.3s ease-out;
+    `;
+    errorDiv.textContent = message;
+    
+    if (targetElement && targetElement.parentNode) {
+        targetElement.parentNode.appendChild(errorDiv);
+        targetElement.style.borderColor = '#ff4757';
+        targetElement.classList.add('error');
+    } else if (elements.authForm) {
+        elements.authForm.appendChild(errorDiv);
+    }
+}
+
+async function handleAuth(event) {
+    event.preventDefault();
+    
+    const username = elements.authUsername?.value.trim();
+    const email = elements.authEmail?.value.trim();
+    const phone = elements.authPhone?.value.trim();
+    const password = elements.authPassword?.value;
+    
+    // Basic validation
+    if (!username || !password) {
+        showAuthError('Please fill in required fields');
+        return;
+    }
+    
+    // Registration-specific validation
+    if (!isLoginMode) {
+        if (username.length < 3) {
+            showAuthError('Username must be at least 3 characters long', elements.authUsername);
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+            showAuthError('Username can only contain letters, numbers, dots, hyphens, and underscores', elements.authUsername);
+            return;
+        }
+        
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            showAuthError('Please enter a valid email address', elements.authEmail);
+            return;
+        }
+        
+        if (password.length < 12) {
+            showAuthError('Password must be at least 12 characters long for security', elements.authPassword);
+            return;
+        }
+        
+        const passwordValidation = validatePasswordComplexity(password);
+        if (!passwordValidation.isValid) {
+            showAuthError(passwordValidation.message, elements.authPassword);
+            return;
+        }
+    }
+    
+    const endpoint = isLoginMode ? '/api/login' : '/api/register';
+    const requestData = isLoginMode 
+        ? { username, password }
+        : { username, password, email: email || undefined, phone: phone || undefined };
+    
+    try {
+        // Update submit button state
+        updateAuthSubmitState(true);
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // ✅ ADD THIS SECTION - Show AI threat alert if present
+            if (data.ai_threat_analysis) {
+                handleAIThreatAlert(data.ai_threat_analysis);
+            }
+            // ✅ END OF ADDITION
+            
+            currentUserSalt = data.salt;
+            masterPasswordCache = password;
+            securityScore = data.security_score || 0;
+
+
+            // 🔥 NEW: Show AI threat alert
+            if (data.ai_threat_analysis) {
+                displayAIThreatAlert(data.ai_threat_analysis);
+            }
+            // 🔥 NEW: Check for 2FA requirement
+            if (data.force_2fa) {
+                show2FAModal();
+                return; // Stop here, wait for 2FA verification
             }
 
-        return jsonify(response_data), 200
 
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        db.session.rollback()
-        return jsonify({
-            'success': False,
-            'message': 'Server error during login'
-        }), 500
-
-
-@app.route('/api/register', methods=["POST"])
-def api_register():
-    try:
-        data = request.get_json()
-        username = sanitize_input(data.get("username", ""))
-        password = data.get("password", "")
-        email = sanitize_input(data.get("email", ""))  # optional
-        phone = sanitize_input(data.get("phone", ""))  # optional
-
-        # ✅ Convert empty strings to None (prevents UNIQUE constraint errors)
-        email = email if email.strip() else None
-        phone = phone if phone.strip() else None
-
-        # ✅ Email/Phone are now fully optional — no contact required
-
-        # Validation
-        username_valid, username_error = validate_username(username)
-        if not username_valid:
-            return jsonify({'success': False, 'message': username_error}), 400
-        
-        password_valid, password_error = validate_password_strength(password)
-        if not password_valid:
-            return jsonify({'success': False, 'message': password_error}), 400
-        
-        if email:
-            email_valid, email_error = validate_email(email)
-            if not email_valid:
-                return jsonify({'success': False, 'message': email_error}), 400
-        
-        if phone:
-            phone_valid, phone_error = validate_phone(phone)
-            if not phone_valid:
-                return jsonify({'success': False, 'message': phone_error}), 400
-
-        # Check for existing users
-        if User.query.filter_by(username=username).first():
-            return jsonify({'success': False, 'message': 'Username already exists'}), 400
-        
-        if email and User.query.filter_by(email=email).first():
-            return jsonify({'success': False, 'message': 'Email already registered'}), 400
-
-        if phone and User.query.filter_by(phone=phone).first():
-            return jsonify({'success': False, 'message': 'Phone already registered'}), 400
-
-        # Create new user
-        salt = secrets.token_bytes(64)
-        encryption_salt = base64.b64encode(salt).decode('utf-8')
-        
-        new_user = User(
-            username=username, 
-            email=email,
-            phone=phone,
-            encryption_salt=encryption_salt
-        )
-        new_user.set_password(password)
-        
-        db.session.add(new_user)
-        db.session.commit()
-        
-        # Log registration
-        SecurityLog.create_log(new_user.id, 'ACCOUNT_CREATED', 'New account created')
-        
-        # Send welcome notification if email present
-        if email:
-            NotificationService.notify_user(
-                new_user,
-                'Welcome to VaultGuard',
-                f'Welcome {username}! Your secure password vault is ready. Remember to enable two-factor authentication for extra security.'
-            )
-        
-        # Auto-login
-        login_user(new_user, remember=False)
-        session['logged_in'] = True
-        session['username'] = new_user.username
-        session['user_id'] = new_user.id
-        session.permanent = True
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Secure account created!', 
-            'salt': encryption_salt,
-            'username': new_user.username,
-            'security_score': new_user.get_security_score()
-        }), 201
-        
-    except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Server error'}), 500
-
-
-# --------------------------------------------------------
-# Password Reset System (NEW)
-# --------------------------------------------------------
-@app.route('/api/reset-password/request', methods=['POST'])
-def request_password_reset():
-    try:
-        data = request.get_json()
-        identifier = sanitize_input(data.get('identifier', ''))  # username, email, or phone
-        method = data.get('method', 'email')  # 'email' or 'sms'
-        
-        if not identifier:
-            return jsonify({'success': False, 'message': 'Username, email, or phone required'}), 400
-        
-        # Find user by username, email, or phone
-        user = None
-        if '@' in identifier:
-            user = User.query.filter(
-                (User.email == identifier) | (User.recovery_email == identifier)
-            ).first()
-        elif identifier.isdigit() or '+' in identifier:
-            clean_phone = re.sub(r'\D', '', identifier)
-            user = User.query.filter(
-                (User.phone.like(f'%{clean_phone}%')) | 
-                (User.recovery_phone.like(f'%{clean_phone}%'))
-            ).first()
-        else:
-            user = User.query.filter_by(username=identifier).first()
-        
-        if not user:
-            # Don't reveal if user exists or not
-            return jsonify({
-                'success': True, 
-                'message': 'If the account exists, a reset code has been sent.'
-            }), 200
-        
-        # Determine contact method
-        if method == 'email':
-            contact_info = user.email or user.recovery_email
-            if not contact_info:
-                return jsonify({'success': False, 'message': 'No email associated with this account'}), 400
-        else:
-            contact_info = user.phone or user.recovery_phone
-            if not contact_info:
-                return jsonify({'success': False, 'message': 'No phone associated with this account'}), 400
-        
-        # Generate reset token
-        reset_token = PasswordReset.create_reset_token(user, method, contact_info)
-        
-        # Send reset code
-        if method == 'email':
-            subject = "VaultGuard Password Reset Code"
-            message = f"Your password reset code is: {reset_token[-6:].upper()}\n\nThis code expires in 30 minutes.\n\nIf you didn't request this, ignore this email."
+            // Handle new device notification
+            if (data.new_device) {
+                showNotification('New device detected! Check your notifications for security alert.', 'warning');
+            }
             
-            html_message = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background: #1a1a1a; color: #ffffff; padding: 20px; text-align: center;">
-                    <h1>🛡️ VaultGuard Password Reset</h1>
-                </div>
-                <div style="padding: 20px; background: #f8f9fa; color: #333;">
-                    <h2>Password Reset Code</h2>
-                    <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-                        <h1 style="font-family: monospace; letter-spacing: 3px; color: #1976d2;">{reset_token[-6:].upper()}</h1>
+            showNotification(data.message, 'success');
+            closeAuthModal();
+            
+            // Smooth transition to authenticated state
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            showAuthError(data.message);
+        }
+    } catch (error) {
+        console.error('Auth error:', error);
+        showAuthError('Network error. Please check your connection and try again.');
+    } finally {
+        updateAuthSubmitState(false);
+    }
+}
+
+function validatePasswordComplexity(password) {
+    const requirements = [];
+    
+    if (!/[a-z]/.test(password)) requirements.push('lowercase letter');
+    if (!/[A-Z]/.test(password)) requirements.push('uppercase letter');
+    if (!/[0-9]/.test(password)) requirements.push('number');
+    if (!/[!@#$%^&*()_+-=\[\]{}|;:,.<>?]/.test(password)) requirements.push('special character');
+    
+    if (requirements.length > 0) {
+        return {
+            isValid: false,
+            message: `Password must contain: ${requirements.join(', ')}`
+        };
+    }
+    
+    return { isValid: true, message: '' };
+}
+
+function updateAuthSubmitState(isLoading) {
+    if (!elements.authSubmit) return;
+    
+    if (isLoading) {
+        elements.authSubmit.disabled = true;
+        elements.authSubmit.textContent = isLoginMode ? 'Authenticating...' : 'Creating Account...';
+        elements.authSubmit.style.opacity = '0.7';
+        elements.authSubmit.style.cursor = 'not-allowed';
+    } else {
+        elements.authSubmit.disabled = false;
+        elements.authSubmit.textContent = isLoginMode ? 'Secure Login' : 'Create Account';
+        elements.authSubmit.style.opacity = '1';
+        elements.authSubmit.style.cursor = 'pointer';
+    }
+}
+
+// ===== ENHANCED VAULT MANAGEMENT =====
+async function checkAuthenticationStatus() {
+    try {
+        const response = await fetch('/api/me', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.authenticated) {
+            currentUserSalt = data.salt;
+            securityScore = data.security_score || 0;
+            updateUIForAuthenticatedUser(data);
+        } else {
+            updateUIForUnauthenticatedUser();
+        }
+    } catch (error) {
+        console.error('Failed to check auth status:', error);
+        updateUIForUnauthenticatedUser();
+    }
+}
+
+function updateUIForAuthenticatedUser(userData) {
+    // Update security score display
+    if (elements.securityScoreValue) {
+        elements.securityScoreValue.textContent = userData.security_score || 0;
+        
+        // Update color based on score
+        const scoreElement = elements.securityScoreValue.parentElement;
+        if (scoreElement) {
+            scoreElement.className = 'security-score-badge';
+            if (userData.security_score >= 80) {
+                scoreElement.classList.add('excellent');
+            } else if (userData.security_score >= 60) {
+                scoreElement.classList.add('good');
+            } else if (userData.security_score >= 40) {
+                scoreElement.classList.add('fair');
+            } else {
+                scoreElement.classList.add('poor');
+            }
+        }
+    }
+    
+    // Show password age warning if needed
+    if (userData.password_age_warning) {
+        setTimeout(() => {
+            showNotification('Your master password is over 90 days old. Consider changing it for better security.', 'warning');
+        }, 3000);
+    }
+}
+
+function updateUIForUnauthenticatedUser() {
+    currentUserSalt = null;
+    masterPasswordCache = null;
+    securityScore = 0;
+}
+
+async function loadVaultData() {
+    try {
+        showLoadingState('vault');
+        
+        const response = await fetch('/api/vault', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                vaultData = data.vault_entries;
+                securityScore = data.security_score || securityScore;
+                updateVaultDisplay();
+                showNotification(`Loaded ${vaultData.length} encrypted passwords`, 'info');
+                
+                // Update security score
+                if (elements.securityScoreValue) {
+                    elements.securityScoreValue.textContent = securityScore;
+                }
+            }
+        } else {
+            throw new Error(`HTTP ${response.status}`);
+        }
+    } catch (error) {
+        console.error('Failed to load vault data:', error);
+        showNotification('Failed to load vault data', 'error');
+    } finally {
+        hideLoadingState('vault');
+    }
+}
+
+async function savePassword() {
+    const site = elements.siteName?.value.trim();
+    const username = elements.vaultUsername?.value.trim();
+    const password = elements.vaultPassword?.value;
+    const category = elements.vaultCategory?.value || 'General';
+    const notes = elements.vaultNotes?.value.trim();
+    
+    // Validation
+    if (!site || !username || !password) {
+        showNotification('Please fill in all required fields', 'error');
+        highlightEmptyFields([elements.siteName, elements.vaultUsername, elements.vaultPassword]);
+        return;
+    }
+    
+    if (site.length > 120) {
+        showNotification('Site name must be less than 120 characters', 'error');
+        return;
+    }
+    
+    if (username.length > 120) {
+        showNotification('Username must be less than 120 characters', 'error');
+        return;
+    }
+    
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        updateSaveButtonState(true);
+        
+        const response = await fetch('/api/vault', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                site: site,
+                username: username,
+                password: password,
+                category: category,
+                notes: notes,
+                master_password: masterPassword
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Clear form
+            elements.siteName.value = '';
+            elements.vaultUsername.value = '';
+            elements.vaultPassword.value = '';
+            elements.vaultNotes.value = '';
+            elements.vaultCategory.value = 'General';
+            
+            // Show breach warning if needed
+            if (data.breach_warning) {
+                showNotification(`⚠️ Password saved but found in ${data.breach_count?.toLocaleString()} breaches! Consider changing it.`, 'warning');
+            } else {
+                showNotification(data.message, 'success');
+            }
+            
+            // Reload vault data
+            await loadVaultData();
+            
+            // Focus back to site field for next entry
+            elements.siteName.focus();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save password:', error);
+        showNotification('Failed to save password. Please try again.', 'error');
+    } finally {
+        updateSaveButtonState(false);
+    }
+}
+
+function highlightEmptyFields(fields) {
+    fields.forEach(field => {
+        if (field && !field.value.trim()) {
+            field.style.borderColor = '#ff4757';
+            field.style.animation = 'shake 0.5s ease-in-out';
+            
+            setTimeout(() => {
+                field.style.borderColor = '';
+                field.style.animation = '';
+            }, 2000);
+        }
+    });
+}
+
+function updateSaveButtonState(isLoading) {
+    if (!elements.savePasswordBtn) return;
+    
+    if (isLoading) {
+        elements.savePasswordBtn.disabled = true;
+        elements.savePasswordBtn.textContent = 'Encrypting & Saving...';
+        elements.savePasswordBtn.style.opacity = '0.7';
+    } else {
+        elements.savePasswordBtn.disabled = false;
+        elements.savePasswordBtn.textContent = '💾 Encrypt & Store Securely';
+        elements.savePasswordBtn.style.opacity = '1';
+    }
+}
+
+async function getMasterPassword() {
+    if (masterPasswordCache) {
+        return masterPasswordCache;
+    }
+    
+    const password = prompt('🔐 Enter your master password to access secure vault:');
+    if (!password) {
+        showNotification('Master password required for vault access', 'warning');
+        return null;
+    }
+    
+    // Cache password for 5 minutes
+    masterPasswordCache = password;
+    setTimeout(() => { 
+        masterPasswordCache = null;
+        showNotification('Master password session expired for security', 'info');
+    }, 5 * 60 * 1000);
+    
+    return password;
+}
+
+// ===== ENHANCED VAULT DISPLAY =====
+function updateVaultDisplay() {
+    if (!elements.vaultList) return;
+    
+    let filteredData = vaultData;
+    
+    // Apply filter
+    if (vaultFilter) {
+        filteredData = vaultData.filter(item => 
+            item.site.toLowerCase().includes(vaultFilter) ||
+            item.username.toLowerCase().includes(vaultFilter) ||
+            item.category.toLowerCase().includes(vaultFilter) ||
+            (item.notes && item.notes.toLowerCase().includes(vaultFilter))
+        );
+    }
+    
+    // Apply sorting
+    filteredData.sort((a, b) => {
+        switch (vaultSortBy) {
+            case 'site':
+                return a.site.localeCompare(b.site);
+            case 'username':
+                return a.username.localeCompare(b.username);
+            case 'category':
+                return a.category.localeCompare(b.category);
+            case 'created_at':
+                return new Date(b.created_at) - new Date(a.created_at);
+            case 'access_count':
+                return (b.access_count || 0) - (a.access_count || 0);
+            case 'updated_at':
+            default:
+                return new Date(b.updated_at) - new Date(a.updated_at);
+        }
+    });
+    
+    if (filteredData.length === 0) {
+        displayEmptyVault();
+        return;
+    }
+    
+    // Display vault statistics
+    displayVaultStats(filteredData.length);
+    
+    // Display vault entries
+    elements.vaultList.innerHTML = filteredData.map((item, index) => {
+        const strengthClass = getStrengthClass(item.strength_score);
+        const compromisedStatus = item.is_compromised ? '🚨 Compromised' : '';
+        const lastAccessed = item.last_accessed ? formatTimestamp(item.last_accessed) : 'Never';
+        
+        return `
+            <li class="vault-item ${item.is_compromised ? 'compromised' : ''}" style="animation: fadeInUp 0.4s ease-out ${index * 0.05}s backwards;">
+                <div class="vault-info">
+                    <div class="site-header">
+                        <h4 class="site-name">${escapeHtml(item.site)}</h4>
+                        <div class="vault-meta">
+                            <span class="category-badge">${escapeHtml(item.category)}</span>
+                            <span class="created-date">Added: ${formatTimestamp(item.created_at)}</span>
+                            ${item.updated_at !== item.created_at ? `<span class="updated-badge">Updated</span>` : ''}
+                        </div>
                     </div>
-                    <p><strong>This code expires in 30 minutes.</strong></p>
-                    <p>If you didn't request this password reset, please ignore this email and secure your account.</p>
-                </div>
-            </body>
-            </html>
-            """
-            
-            NotificationService.send_email(contact_info, subject, message, html_message)
-        else:
-            sms_message = f"VaultGuard: Your password reset code is {reset_token[-6:].upper()}. Expires in 30 minutes."
-            NotificationService.send_sms(contact_info, sms_message)
-        
-        # Log reset request
-        SecurityLog.create_log(user.id, 'PASSWORD_RESET_REQUESTED', 
-                              f'Password reset requested via {method}', 'INFO')
-        
-        return jsonify({
-            'success': True,
-            'message': f'Reset code sent via {method}',
-            'masked_contact': mask_contact_info(contact_info, method)
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Password reset request error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Server error'}), 500
-
-@app.route('/api/reset-password/verify', methods=['POST'])
-def verify_reset_code():
-    try:
-        data = request.get_json()
-        reset_code = data.get('reset_code', '').upper()
-        new_password = data.get('new_password', '')
-        
-        if not reset_code or not new_password:
-            return jsonify({'success': False, 'message': 'Reset code and new password required'}), 400
-        
-        # Validate new password
-        password_valid, password_error = validate_password_strength(new_password)
-        if not password_valid:
-            return jsonify({'success': False, 'message': password_error}), 400
-        
-        # Find reset token (match last 6 characters)
-        reset_request = PasswordReset.query.filter(
-            PasswordReset.reset_token.like(f'%{reset_code.lower()}')
-        ).filter_by(used=False).first()
-        
-        if not reset_request or not reset_request.is_valid():
-            return jsonify({'success': False, 'message': 'Invalid or expired reset code'}), 400
-        
-        # Update user password
-        user = reset_request.user
-        user.set_password(new_password)
-        reset_request.used = True
-        
-        # Invalidate all other sessions
-        # In production, implement session invalidation
-        
-        db.session.commit()
-        
-        # Log password change
-        SecurityLog.create_log(user.id, 'PASSWORD_CHANGED', 'Password changed via reset', 'INFO')
-        
-        # Notify user
-        NotificationService.notify_user(
-            user,
-            'Password Changed',
-            'Your password has been successfully changed. If this wasn\'t you, contact support immediately.',
-            is_critical=True
-        )
-        
-        return jsonify({
-            'success': True,
-            'message': 'Password successfully reset! You can now login with your new password.'
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Password reset verify error: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Server error'}), 500
-
-def mask_contact_info(contact_info, method):
-    """Mask contact information for privacy"""
-    if method == 'email':
-        parts = contact_info.split('@')
-        if len(parts) == 2:
-            username_part = parts[0]
-            domain_part = parts[1]
-            masked_username = username_part[:2] + '*' * (len(username_part) - 2)
-            return f"{masked_username}@{domain_part}"
-    else:
-        # Phone number
-        if len(contact_info) > 4:
-            return '*' * (len(contact_info) - 4) + contact_info[-4:]
-    return contact_info
-
-# --------------------------------------------------------
-# Enhanced Vault Management
-# --------------------------------------------------------
-@app.route('/api/vault', methods=['GET', 'POST'])
-@login_required
-def manage_vault():
-    try:
-        if request.method == 'POST':
-            data = request.get_json()
-            
-            if VaultEntry.query.filter_by(user_id=current_user.id).count() >= 50:
-                return jsonify({'success': False, 'message': 'Vault limit reached (50 passwords)'}), 400
-                
-            site = sanitize_input(data.get('site', ''))
-            username = sanitize_input(data.get('username', ''))
-            password = data.get('password', '')
-            master_password = data.get('master_password', '')
-            category = sanitize_input(data.get('category', 'General'))  # NEW
-            notes = sanitize_input(data.get('notes', ''))  # NEW
-
-            if not all([site, username, password, master_password]):
-                return jsonify({'success': False, 'message': 'All required fields must be filled'}), 400
-
-            if not current_user.check_password(master_password):
-                SecurityLog.create_log(current_user.id, 'VAULT_ACCESS_DENIED', 'Invalid master password for vault access', 'WARNING')
-                return jsonify({'success': False, 'message': 'Invalid master password'}), 401
-
-            # Check password strength and breach status
-            is_breached, breach_count = check_password_breach_advanced(password)
-            password_analysis = zxcvbn(password)
-            strength_score = password_analysis['score'] * 25  # Convert to 0-100 scale
-
-            encryption_key = current_user.get_encryption_key(master_password)
-            encrypted_password = encrypt_password(password, encryption_key)
-            
-            existing_entry = VaultEntry.query.filter_by(
-                site=site, username=username, user_id=current_user.id
-            ).first()
-            
-            if existing_entry:
-                existing_entry.encrypted_password = encrypted_password
-                existing_entry.category = category
-                existing_entry.notes = notes
-                existing_entry.password_strength_score = strength_score
-                existing_entry.is_compromised = is_breached
-                existing_entry.updated_at = datetime.utcnow()
-                message = 'Password updated securely!'
-                SecurityLog.create_log(current_user.id, 'PASSWORD_UPDATED', f'Updated password for {site}')
-            else:
-                new_entry = VaultEntry(
-                    site=site,
-                    username=username,
-                    encrypted_password=encrypted_password,
-                    category=category,
-                    notes=notes,
-                    password_strength_score=strength_score,
-                    is_compromised=is_breached,
-                    user_id=current_user.id
-                )
-                db.session.add(new_entry)
-                message = 'Password encrypted and saved!'
-                SecurityLog.create_log(current_user.id, 'PASSWORD_ADDED', f'Added new password for {site}')
-            
-            # Send breach warning if needed
-            if is_breached and current_user.breach_notifications:
-                NotificationService.notify_user(
-                    current_user,
-                    'Compromised Password Detected',
-                    f'The password you just saved for {site} has been found in {breach_count:,} data breaches. Consider changing it immediately.',
-                    is_critical=True
-                )
-
-            db.session.commit()
-            return jsonify({
-                'success': True, 
-                'message': message,
-                'breach_warning': is_breached,
-                'breach_count': breach_count if is_breached else 0
-            }), 201
-
-        # GET request - return vault entries
-        entries = VaultEntry.query.filter_by(user_id=current_user.id).order_by(VaultEntry.updated_at.desc()).all()
-        vault_entries = []
-        
-        for entry in entries:
-            vault_entries.append({
-                'id': entry.id,
-                'site': entry.site,
-                'username': entry.username,
-                'category': entry.category,
-                'notes': entry.notes,
-                'created_at': entry.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'updated_at': entry.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'last_accessed': entry.last_accessed.strftime('%Y-%m-%d %H:%M:%S') if entry.last_accessed else None,
-                'access_count': entry.access_count,
-                'strength_score': entry.password_strength_score,
-                'is_compromised': entry.is_compromised
-            })
-        
-        return jsonify({
-            'success': True, 
-            'vault_entries': vault_entries,
-            'security_score': current_user.get_security_score()
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Vault error: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Server error'}), 500
-
-@app.route('/api/vault/<int:entry_id>/password', methods=['POST'])
-@login_required
-def get_vault_password(entry_id):
-    try:
-        data = request.get_json()
-        master_password = data.get('master_password', '')
-        
-        if not current_user.check_password(master_password):
-            SecurityLog.create_log(current_user.id, 'VAULT_ACCESS_DENIED', f'Invalid master password for entry {entry_id}', 'WARNING')
-            return jsonify({'success': False, 'message': 'Invalid master password'}), 401
-        
-        entry = VaultEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
-        if not entry:
-            return jsonify({'success': False, 'message': 'Password not found'}), 404
-        
-        encryption_key = current_user.get_encryption_key(master_password)
-        decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
-        
-        # Record access
-        entry.record_access()
-        db.session.commit()
-        
-        return jsonify({'success': True, 'password': decrypted_password}), 200
-        
-    except Exception as e:
-        logger.error(f"Password access error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Decryption failed'}), 500
-
-@app.route('/api/vault/<int:entry_id>', methods=['DELETE'])
-@login_required
-def delete_vault_entry(entry_id):
-    try:
-        entry = VaultEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
-        if not entry:
-            return jsonify({'success': False, 'message': 'Password not found'}), 404
-        
-        site_name = entry.site
-        db.session.delete(entry)
-        db.session.commit()
-        
-        SecurityLog.create_log(current_user.id, 'PASSWORD_DELETED', f'Deleted password for {site_name}')
-        
-        return jsonify({'success': True, 'message': 'Password securely deleted'}), 200
-        
-    except Exception as e:
-        logger.error(f"Delete error: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Server error'}), 500
-
-# --------------------------------------------------------
-# Security Dashboard API (NEW)
-# --------------------------------------------------------
-@app.route('/api/security/dashboard', methods=['GET'])
-@login_required
-def security_dashboard_api():
-    try:
-        # Calculate security metrics
-        total_passwords = VaultEntry.query.filter_by(user_id=current_user.id).count()
-        compromised_passwords = VaultEntry.query.filter_by(user_id=current_user.id, is_compromised=True).count()
-        weak_passwords = VaultEntry.query.filter(
-            VaultEntry.user_id == current_user.id,
-            VaultEntry.password_strength_score < 50
-        ).count()
-        
-        # Recent security events
-        recent_events = SecurityLog.query.filter_by(user_id=current_user.id)\
-            .order_by(SecurityLog.timestamp.desc()).limit(10).all()
-        
-        events = []
-        for event in recent_events:
-            events.append({
-                'type': event.event_type,
-                'description': event.description,
-                'timestamp': event.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'severity': event.severity
-            })
-        
-        # Password categories breakdown
-        categories = db.session.query(
-            VaultEntry.category, 
-            db.func.count(VaultEntry.id).label('count')
-        ).filter_by(user_id=current_user.id).group_by(VaultEntry.category).all()
-        
-        category_breakdown = {category: count for category, count in categories}
-        
-        # Device information
-        trusted_devices = DeviceFingerprint.query.filter_by(
-            user_id=current_user.id, 
-            is_trusted=True
-        ).count()
-        
-        total_devices = DeviceFingerprint.query.filter_by(user_id=current_user.id).count()
-        
-        dashboard_data = {
-            'security_score': current_user.get_security_score(),
-            'total_passwords': total_passwords,
-            'compromised_passwords': compromised_passwords,
-            'weak_passwords': weak_passwords,
-            'strong_passwords': total_passwords - compromised_passwords - weak_passwords,
-            'password_age_warning': current_user.should_change_password(),
-            'two_factor_enabled': current_user.two_factor_enabled,
-            'recent_events': events,
-            'category_breakdown': category_breakdown,
-            'trusted_devices': trusted_devices,
-            'total_devices': total_devices,
-            'last_login': current_user.last_login.strftime('%Y-%m-%d %H:%M:%S') if current_user.last_login else None,
-            'account_created': current_user.created_at.strftime('%Y-%m-%d'),
-            'notifications_enabled': {
-                'email': current_user.email_notifications,
-                'sms': current_user.sms_notifications,
-                'security_alerts': current_user.security_alerts,
-                'login_notifications': current_user.login_notifications,
-                'breach_notifications': current_user.breach_notifications
-            }
-        }
-        
-        return jsonify({'success': True, 'dashboard': dashboard_data}), 200
-        
-    except Exception as e:
-        logger.error(f"Dashboard error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to load dashboard'}), 500
-
-
-# ========================================
-# AI GUARDIAN DASHBOARD API ENDPOINTS
-# Add these routes to your app.py (after existing routes)
-# ========================================
-
-@app.route('/api/ai/dashboard', methods=['GET'])
-@login_required
-def get_ai_dashboard():
-    """Get complete AI Guardian dashboard data"""
-    try:
-        days = request.args.get('days', 7, type=int)
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Get AI threat logs for current user only
-        threat_logs = SecurityLog.query.filter(
-            SecurityLog.user_id == current_user.id,
-            SecurityLog.event_type == 'AI_THREAT_ANALYSIS',
-            SecurityLog.timestamp >= cutoff_date
-        ).order_by(SecurityLog.timestamp.desc()).all()
-        
-        # Calculate statistics
-        total_analyses = len(threat_logs)
-        safe_count = 0
-        suspicious_count = 0
-        critical_count = 0
-        threat_scores = []
-        
-        for log in threat_logs:
-            # Extract score from description
-            import re
-            score_match = re.search(r'Score (\d+)', log.description)
-            if score_match:
-                score = int(score_match.group(1))
-                threat_scores.append(score)
-                
-                # Categorize based on NEW scoring system
-                if score >= 80:
-                    critical_count += 1
-                elif score >= 30:
-                    suspicious_count += 1
-                else:
-                    safe_count += 1
-        
-        avg_score = sum(threat_scores) / len(threat_scores) if threat_scores else 0
-        
-        # Get device stats
-        total_devices = DeviceFingerprint.query.filter_by(user_id=current_user.id).count()
-        trusted_devices = DeviceFingerprint.query.filter_by(
-            user_id=current_user.id, 
-            is_trusted=True
-        ).count()
-        new_devices = total_devices - trusted_devices
-        
-        # Get recent threat history (last 10)
-        recent_threats = []
-        for log in threat_logs[:10]:
-            score_match = re.search(r'Score (\d+)', log.description)
-            score = int(score_match.group(1)) if score_match else 0
-            
-            # Determine level based on NEW scoring
-            if score >= 80:
-                level = 'critical'
-            elif score >= 30:
-                level = 'suspicious'
-            else:
-                level = 'safe'
-            
-            recent_threats.append({
-                'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'score': score,
-                'level': level,
-                'description': log.description,
-                'ip_address': log.ip_address
-            })
-        
-        # Get daily threat scores for graph (last 7 days)
-        daily_scores = {}
-        for log in threat_logs:
-            day = log.timestamp.strftime('%Y-%m-%d')
-            score_match = re.search(r'Score (\d+)', log.description)
-            if score_match:
-                score = int(score_match.group(1))
-                if day not in daily_scores:
-                    daily_scores[day] = []
-                daily_scores[day].append(score)
-        
-        # Average scores per day
-        graph_data = []
-        for day in sorted(daily_scores.keys()):
-            avg = sum(daily_scores[day]) / len(daily_scores[day])
-            graph_data.append({
-                'date': day,
-                'score': round(avg, 1),
-                'count': len(daily_scores[day])
-            })
-        
-        return jsonify({
-            'success': True,
-            'dashboard': {
-                'statistics': {
-                    'total_analyses': total_analyses,
-                    'safe_count': safe_count,
-                    'suspicious_count': suspicious_count,
-                    'critical_count': critical_count,
-                    'average_score': round(avg_score, 1)
-                },
-                'devices': {
-                    'total': total_devices,
-                    'trusted': trusted_devices,
-                    'new': new_devices
-                },
-                'recent_threats': recent_threats,
-                'graph_data': graph_data,
-                'ai_model': {
-                    'type': 'Behavioral AI' if ai_guardian else 'Rule-based',
-                    'trained': ai_guardian.detector.is_trained if ai_guardian else False,
-                    'profiles': len(ai_guardian.detector.user_profiles) if ai_guardian else 0
-                }
-            }
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"AI Dashboard error: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to load AI dashboard'
-        }), 500
-
-
-@app.route('/api/ai/last-threat', methods=['GET'])
-@login_required
-def get_last_threat():
-    """Get most recent AI threat analysis for current user"""
-    try:
-        last_threat = SecurityLog.query.filter(
-            SecurityLog.user_id == current_user.id,
-            SecurityLog.event_type == 'AI_THREAT_ANALYSIS'
-        ).order_by(SecurityLog.timestamp.desc()).first()
-        
-        if not last_threat:
-            return jsonify({
-                'success': True,
-                'has_data': False,
-                'message': 'No AI analyses yet'
-            }), 200
-        
-        # Extract data
-        import re
-        score_match = re.search(r'Score (\d+)', last_threat.description)
-        score = int(score_match.group(1)) if score_match else 0
-        
-        # Determine level based on NEW scoring
-        if score >= 80:
-            level = 'critical'
-            level_text = 'CRITICAL THREAT'
-        elif score >= 60:
-            level = 'high_risk'
-            level_text = 'HIGH RISK'
-        elif score >= 30:
-            level = 'suspicious'
-            level_text = 'SUSPICIOUS'
-        else:
-            level = 'safe'
-            level_text = 'Safe'
-        
-        # Extract reasons
-        reasons_match = re.search(r'Reasons: (.+)$', last_threat.description)
-        reasons = reasons_match.group(1) if reasons_match else 'Normal login pattern'
-        
-        return jsonify({
-            'success': True,
-            'has_data': True,
-            'threat': {
-                'score': score,
-                'level': level,
-                'level_text': level_text,
-                'reasons': reasons,
-                'timestamp': last_threat.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                'ip_address': last_threat.ip_address
-            }
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Last threat error: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Failed to get last threat'
-        }), 500
-
-
-# --------------------------------------------------------
-# Notification Settings API (NEW)
-# --------------------------------------------------------
-@app.route('/api/settings/notifications', methods=['GET', 'POST'])
-@login_required
-def notification_settings():
-    try:
-        if request.method == 'POST':
-            data = request.get_json()
-            
-            # Update notification preferences
-            current_user.email_notifications = data.get('email_notifications', True)
-            current_user.sms_notifications = data.get('sms_notifications', False)
-            current_user.security_alerts = data.get('security_alerts', True)
-            current_user.login_notifications = data.get('login_notifications', True)
-            current_user.breach_notifications = data.get('breach_notifications', True)
-            
-            # Update contact information if provided
-            if 'recovery_email' in data:
-                recovery_email = sanitize_input(data.get('recovery_email', ''))
-                if recovery_email:
-                    email_valid, email_error = validate_email(recovery_email)
-                    if not email_valid:
-                        return jsonify({'success': False, 'message': email_error}), 400
-                current_user.recovery_email = recovery_email if recovery_email else None
-            
-            if 'recovery_phone' in data:
-                recovery_phone = sanitize_input(data.get('recovery_phone', ''))
-                if recovery_phone:
-                    phone_valid, phone_error = validate_phone(recovery_phone)
-                    if not phone_valid:
-                        return jsonify({'success': False, 'message': phone_error}), 400
-                current_user.recovery_phone = recovery_phone if recovery_phone else None
-            
-            db.session.commit()
-            
-            SecurityLog.create_log(current_user.id, 'SETTINGS_UPDATED', 'Notification settings updated')
-            
-            return jsonify({'success': True, 'message': 'Notification settings updated'}), 200
-        
-        # GET request - return current settings
-        settings = {
-            'email_notifications': current_user.email_notifications,
-            'sms_notifications': current_user.sms_notifications,
-            'security_alerts': current_user.security_alerts,
-            'login_notifications': current_user.login_notifications,
-            'breach_notifications': current_user.breach_notifications,
-            'recovery_email': current_user.recovery_email,
-            'recovery_phone': current_user.recovery_phone,
-            'primary_email': current_user.email,
-            'primary_phone': current_user.phone
-        }
-        
-        return jsonify({'success': True, 'settings': settings}), 200
-        
-    except Exception as e:
-        logger.error(f"Notification settings error: {str(e)}")
-        db.session.rollback()
-        return jsonify({'success': False, 'message': 'Failed to update settings'}), 500
-    
-
-# --------------------------------------------------------
-# Test Notification Endpoint (FIXED & IMPROVED)
-# --------------------------------------------------------
-@app.route('/api/notify/test', methods=['POST'])
-@login_required
-def send_test_notification():
-    try:
-        logger.info(f"Test notification triggered for user={current_user.username}")
-
-        # ✅ Correct parameter order (event_type first, then message)
-        result = NotificationService.notify_user(
-            current_user,
-            "TEST_NOTIFICATION",  # event_type
-            f"Hello {current_user.username}, your VaultGuard notifications are working properly!"
-        )
-
-        # ✅ If notify_user() returns list, convert to boolean
-        success = bool(result)
-
-        if success:
-            SecurityLog.create_log(
-                current_user.id,
-                'NOTIFICATION_TEST',
-                'User triggered test notification successfully'
-            )
-            return jsonify({
-                'success': True,
-                'message': '✅ Test notification sent successfully! Check your inbox or phone.'
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'message': '⚠️ Notification could not be sent. Check your email or phone settings.'
-            }), 500
-
-    except Exception as e:
-        logger.error(f"Test notification error: {str(e)}")
-        db.session.rollback()
-        return jsonify({
-            'success': False,
-            'message': f'Server error while sending notification: {str(e)}'
-        }), 500
-
-
-# --------------------------------------------------------
-# Device Management API (NEW)
-# --------------------------------------------------------
-@app.route('/api/devices', methods=['GET'])
-@login_required
-def list_devices():
-    try:
-        devices = DeviceFingerprint.query.filter_by(user_id=current_user.id)\
-            .order_by(DeviceFingerprint.last_seen.desc()).all()
-        
-        device_list = []
-        for device in devices:
-            device_list.append({
-                'id': device.id,
-                'device_name': device.device_name or 'Unknown Device',
-                'is_trusted': device.is_trusted,
-                'first_seen': device.first_seen.strftime('%Y-%m-%d %H:%M:%S'),
-                'last_seen': device.last_seen.strftime('%Y-%m-%d %H:%M:%S'),
-                'ip_address': device.ip_address,
-                'is_current': device.device_hash == session.get('device_hash')
-            })
-        
-        return jsonify({'success': True, 'devices': device_list}), 200
-        
-    except Exception as e:
-        logger.error(f"Device list error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to load devices'}), 500
-
-@app.route('/api/devices/<int:device_id>/trust', methods=['POST'])
-@login_required
-def trust_device(device_id):
-    try:
-        device = DeviceFingerprint.query.filter_by(
-            id=device_id, 
-            user_id=current_user.id
-        ).first()
-        
-        if not device:
-            return jsonify({'success': False, 'message': 'Device not found'}), 404
-        
-        device.is_trusted = True
-        db.session.commit()
-        
-        SecurityLog.create_log(current_user.id, 'DEVICE_TRUSTED', f'Device {device.id} marked as trusted')
-        
-        return jsonify({'success': True, 'message': 'Device marked as trusted'}), 200
-        
-    except Exception as e:
-        logger.error(f"Trust device error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to trust device'}), 500
-
-# --------------------------------------------------------
-# AI Guardian API Routes
-# --------------------------------------------------------
-# ===== REPLACE YOUR /api/ai/threat-stats ROUTE WITH THIS =====
-# Location: Around line 1570 in app.py
-
-@app.route('/api/ai/threat-stats', methods=['GET'])
-@login_required
-def get_ai_threat_stats():
-    """Get AI threat detection statistics - FIXED to exclude deleted users"""
-    try:
-        days = request.args.get('days', 7, type=int)
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Get all AI threat analysis logs
-        threat_logs = SecurityLog.query.filter(
-            SecurityLog.event_type == 'AI_THREAT_ANALYSIS',
-            SecurityLog.timestamp >= cutoff_date
-        ).all()
-
-        # ✅ FIX: Filter out logs from deleted users
-        valid_logs = []
-        for log in threat_logs:
-            if log.user_id:  # Only process if user_id exists
-                user_exists = User.query.filter_by(id=log.user_id).first()
-                if user_exists:  # Only include if user still exists
-                    valid_logs.append(log)
-
-        # Replace threat_logs with valid_logs for remaining code
-        threat_logs = valid_logs
-        
-        # Calculate statistics from valid logs only
-        if not valid_logs:
-            stats = {
-                'total_analyses': 0,
-                'safe_count': 0,
-                'suspicious_count': 0,
-                'critical_count': 0,
-                'average_score': 0,
-                'days_analyzed': days
-            }
-        else:
-            # Extract scores and categorize
-            safe_count = 0
-            suspicious_count = 0
-            critical_count = 0
-            scores = []
-            
-            for log in valid_logs:
-                try:
-                    import re
-                    match = re.search(r'Score (\d+)', log.description)
-                    if match:
-                        score = int(match.group(1))
-                        scores.append(score)
-                        
-                        # ✅ NEW SCORING SYSTEM
-                        if score >= 61:
-                            critical_count += 1
-                        elif score >= 31:
-                            suspicious_count += 1
-                        else:
-                            safe_count += 1
-                except:
-                    pass
-            
-            avg_score = sum(scores) / len(scores) if scores else 0
-            
-            stats = {
-                'total_analyses': len(valid_logs),
-                'safe_count': safe_count,
-                'suspicious_count': suspicious_count,
-                'critical_count': critical_count,
-                'average_score': round(avg_score, 1),
-                'days_analyzed': days
-            }
-        
-        # Get model status
-        model_status = {
-            'is_trained': ai_guardian.detector.is_trained if ai_guardian else False,
-            'model_type': 'Behavioral AI (Pure Python)' if (ai_guardian and ai_guardian.detector.is_trained) else 'Rule-based',
-            'user_profiles': len(ai_guardian.detector.user_profiles) if ai_guardian else 0
-        }
-        
-        return jsonify({
-            'success': True,
-            'statistics': stats,
-            'ai_model_status': model_status
-        }), 200
-
-        
-    except Exception as e:
-        logger.error(f"AI stats error: {e}")
-        # Return empty stats instead of failing
-        return jsonify({
-            'success': True,
-            'statistics': {
-                'total_analyses': 0,
-                'safe_count': 0,
-                'suspicious_count': 0,
-                'critical_count': 0,
-                'average_score': 0,
-                'days_analyzed': 7
-            },
-            'ai_model_status': {
-                'is_trained': False,
-                'model_type': 'Rule-based',
-                'user_profiles': 0
-            }
-        }), 200
-
-
-@app.route('/api/ai/model-status', methods=['GET'])
-@login_required
-def get_ai_model_status():
-    """Get AI model training status"""
-    try:
-        if not ai_guardian:
-            return jsonify({
-                'success': False,
-                'message': 'AI Guardian not available'
-            }), 500
-        
-        status = ai_guardian.detector.get_model_status()
-        
-        return jsonify({
-            'success': True,
-            'model_status': status,
-            'threat_detector_active': True
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"AI status error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to get model status'}), 500
-
-# --------------------------------------------------------
-# Enhanced Password Analysis
-# --------------------------------------------------------
-@app.route('/api/check_password', methods=['POST'])
-def check_password_strength():
-    try:
-        data = request.get_json()
-        password = data.get('password', '')
-        
-        if not password:
-            return jsonify({
-                'success': True,
-                'breached': False,
-                'count': 0,
-                'suggestions': [],
-                'score': 0,
-                'crack_time': 'instantly',
-                'security_level': 'none'
-            })
-        
-        # Use enhanced breach checking
-        is_breached, breach_count = check_password_breach_advanced(password)
-        
-        # zxcvbn analysis
-        zx_result = zxcvbn(password)
-        
-        # Enhanced security level determination
-        security_levels = {
-            'fortress': {'min_score': 4, 'min_length': 32, 'requires_all': True},
-            'military': {'min_score': 4, 'min_length': 20, 'requires_all': True},
-            'strong': {'min_score': 3, 'min_length': 16, 'requires_all': True},
-            'good': {'min_score': 3, 'min_length': 12, 'requires_all': False},
-            'medium': {'min_score': 2, 'min_length': 10, 'requires_all': False},
-            'weak': {'min_score': 1, 'min_length': 8, 'requires_all': False},
-        }
-        
-        # Check character requirements
-        has_upper = any(c.isupper() for c in password)
-        has_lower = any(c.islower() for c in password)
-        has_digit = any(c.isdigit() for c in password)
-        has_symbol = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?~`' for c in password)
-        has_all_types = has_upper and has_lower and has_digit and has_symbol
-        
-        security_level = 'critical'
-        for level, requirements in security_levels.items():
-            if (zx_result['score'] >= requirements['min_score'] and 
-                len(password) >= requirements['min_length'] and
-                (not requirements['requires_all'] or has_all_types)):
-                security_level = level
-                break
-        
-        # Override for breached passwords
-        if is_breached:
-            if breach_count > 1000000:
-                security_level = 'critical'
-            elif breach_count > 100000:
-                security_level = 'weak'
-            elif security_level in ['fortress', 'military']:
-                security_level = 'strong'  # Downgrade but not too much
-        
-        return jsonify({
-            'success': True,
-            'breached': is_breached,
-            'count': breach_count,
-            'suggestions': zx_result['feedback']['suggestions'][:3],
-            'score': zx_result['score'],
-            'crack_time': zx_result['crack_times_display']['offline_slow_hashing_1e4_per_second'],
-            'security_level': security_level,
-            'character_types': {
-                'uppercase': has_upper,
-                'lowercase': has_lower,
-                'numbers': has_digit,
-                'symbols': has_symbol
-            },
-            'entropy': zx_result.get('entropy', 0),
-            'length': len(password)
-        })
-        
-    except Exception as e:
-        logger.error(f"Password analysis error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Analysis failed'}), 500
-
-# --------------------------------------------------------
-# Bulk Security Check (NEW)
-# --------------------------------------------------------
-@app.route('/api/vault/security-audit', methods=['POST'])
-@login_required
-def vault_security_audit():
-    try:
-        data = request.get_json()
-        master_password = data.get('master_password', '')
-        
-        if not current_user.check_password(master_password):
-            return jsonify({'success': False, 'message': 'Invalid master password'}), 401
-        
-        entries = VaultEntry.query.filter_by(user_id=current_user.id).all()
-        encryption_key = current_user.get_encryption_key(master_password)
-        
-        audit_results = {
-            'total_passwords': len(entries),
-            'compromised_count': 0,
-            'weak_count': 0,
-            'duplicate_count': 0,
-            'old_count': 0,
-            'compromised_sites': [],
-            'weak_sites': [],
-            'duplicate_groups': [],
-            'old_sites': []
-        }
-        
-        password_hashes = {}  # To detect duplicates
-        
-        for entry in entries:
-            try:
-                # Decrypt password for analysis
-                decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
-                
-                # Check for breaches
-                is_breached, breach_count = check_password_breach_advanced(decrypted_password)
-                
-                if is_breached:
-                    audit_results['compromised_count'] += 1
-                    audit_results['compromised_sites'].append({
-                        'site': entry.site,
-                        'username': entry.username,
-                        'breach_count': breach_count,
-                        'id': entry.id
-                    })
-                    entry.is_compromised = True
-                
-                # Check password strength
-                zx_result = zxcvbn(decrypted_password)
-                strength_score = zx_result['score'] * 25
-                entry.password_strength_score = strength_score
-                
-                if strength_score < 50:
-                    audit_results['weak_count'] += 1
-                    audit_results['weak_sites'].append({
-                        'site': entry.site,
-                        'username': entry.username,
-                        'strength_score': strength_score,
-                        'id': entry.id
-                    })
-                
-                # Check for duplicates
-                password_hash = hashlib.sha256(decrypted_password.encode()).hexdigest()
-                if password_hash in password_hashes:
-                    password_hashes[password_hash].append({
-                        'site': entry.site,
-                        'username': entry.username,
-                        'id': entry.id
-                    })
-                else:
-                    password_hashes[password_hash] = [{
-                        'site': entry.site,
-                        'username': entry.username,
-                        'id': entry.id
-                    }]
-                
-                # Check password age (if older than 90 days)
-                days_old = (datetime.utcnow() - entry.updated_at).days
-                if days_old > 90:
-                    audit_results['old_count'] += 1
-                    audit_results['old_sites'].append({
-                        'site': entry.site,
-                        'username': entry.username,
-                        'days_old': days_old,
-                        'id': entry.id
-                    })
-                
-            except Exception as e:
-                logger.warning(f"Failed to audit entry {entry.id}: {e}")
-                continue
-        
-        # Process duplicate groups
-        for password_hash, sites in password_hashes.items():
-            if len(sites) > 1:
-                audit_results['duplicate_count'] += len(sites)
-                audit_results['duplicate_groups'].append(sites)
-        
-        # Update database with new security scores
-        db.session.commit()
-        
-        # Log security audit
-        SecurityLog.create_log(current_user.id, 'SECURITY_AUDIT', 
-                              f'Vault security audit completed. Found {audit_results["compromised_count"]} compromised passwords')
-        
-        # Send critical notification if many compromised passwords found
-        if audit_results['compromised_count'] > 5 and current_user.security_alerts:
-            NotificationService.notify_user(
-                current_user,
-                'Critical Security Alert',
-                f'Security audit found {audit_results["compromised_count"]} compromised passwords in your vault. Immediate action required.',
-                is_critical=True
-            )
-        
-        return jsonify({
-            'success': True,
-            'audit_results': audit_results
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Security audit error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Security audit failed'}), 500
-
-# --------------------------------------------------------
-# Export/Import Functionality (NEW)
-# --------------------------------------------------------
-@app.route('/api/vault/export', methods=['POST'])
-@login_required
-def export_vault():
-    try:
-        data = request.get_json()
-        master_password = data.get('master_password', '')
-        export_format = data.get('format', 'json')  # json, csv
-        
-        if not current_user.check_password(master_password):
-            return jsonify({'success': False, 'message': 'Invalid master password'}), 401
-        
-        entries = VaultEntry.query.filter_by(user_id=current_user.id).all()
-        encryption_key = current_user.get_encryption_key(master_password)
-        
-        export_data = []
-        
-        for entry in entries:
-            try:
-                decrypted_password = decrypt_password(entry.encrypted_password, encryption_key)
-                
-                export_entry = {
-                    'site': entry.site,
-                    'username': entry.username,
-                    'password': decrypted_password,
-                    'category': entry.category,
-                    'notes': entry.notes,
-                    'created_at': entry.created_at.isoformat(),
-                    'updated_at': entry.updated_at.isoformat()
-                }
-                
-                export_data.append(export_entry)
-                
-            except Exception as e:
-                logger.warning(f"Failed to decrypt entry {entry.id} for export: {e}")
-                continue
-        
-        # Log export
-        SecurityLog.create_log(current_user.id, 'VAULT_EXPORTED', 
-                              f'Vault data exported in {export_format} format')
-        
-        return jsonify({
-            'success': True,
-            'data': export_data,
-            'format': export_format,
-            'exported_count': len(export_data),
-            'export_timestamp': datetime.utcnow().isoformat()
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Export error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Export failed'}), 500
-
-@app.route('/api/me', methods=['GET'])
-def get_user_info():
-    try:
-        if current_user.is_authenticated:
-            return jsonify({
-                'success': True,
-                'authenticated': True,
-                'username': current_user.username,
-                'email': current_user.email,
-                'salt': current_user.encryption_salt,
-                'vault_count': VaultEntry.query.filter_by(user_id=current_user.id).count(),
-                'security_score': current_user.get_security_score(),
-                'two_factor_enabled': current_user.two_factor_enabled,
-                'password_age_warning': current_user.should_change_password(),
-                'account_created': current_user.created_at.strftime('%Y-%m-%d'),
-                'last_login': current_user.last_login.strftime('%Y-%m-%d %H:%M:%S') if current_user.last_login else None,
-
-                # ⭐ REQUIRED for Frontend 2FA Enforcement
-                'force_2fa': session.get("force_2fa", False),
-            })
-
-        else:
-            return jsonify({
-                'success': True,
-                'authenticated': False,
-                'force_2fa': False
-            })
-
-    except Exception as e:
-        logger.error(f"User info error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to get user info'}), 500
-
-# --------------------------------------------------------
-# 2FA Verification Route (FINAL)
-# --------------------------------------------------------
-@app.route('/api/verify-2fa', methods=['POST'])
-@login_required
-def verify_two_factor():
-    try:
-        data = request.get_json()
-        code = data.get("code", "").strip()
-
-        if not code:
-            return jsonify({'success': False, 'message': 'Invalid code'}), 400
-
-        # Compare with OTP stored in session
-        valid_code = session.get("twofa_code")
-
-        if not valid_code:
-            return jsonify({'success': False, 'message': 'No active 2FA session'}), 400
-
-        if str(code) != str(valid_code):
-            return jsonify({'success': False, 'message': 'Incorrect 2FA code'}), 401
-
-        # Success → mark session as 2FA verified
-        session["force_2fa"] = False
-        session["twofa_verified"] = True
-        session.pop("twofa_code", None)
-
-        # Log success
-        SecurityLog.create_log(
-            current_user.id,
-            "2FA_VERIFIED",
-            "User successfully completed 2FA verification"
-        )
-
-        return jsonify({'success': True, 'message': '2FA verification successful'}), 200
-
-    except Exception as e:
-        logger.error(f"2FA verification error: {e}")
-        return jsonify({'success': False, 'message': '2FA verification failed'}), 500
-
-
-
-# --------------------------------------------------------
-# Admin/Maintenance Routes (Optional)
-# --------------------------------------------------------
-@app.route('/api/admin/stats', methods=['GET'])
-def admin_stats():
-    """Basic application statistics - only enable in development"""
-    if os.environ.get('FLASK_ENV') != 'development':
-        abort(404)
-    
-    try:
-        stats = {
-            'total_users': User.query.count(),
-            'total_vault_entries': VaultEntry.query.count(),
-            'total_security_logs': SecurityLog.query.count(),
-            'compromised_passwords': VaultEntry.query.filter_by(is_compromised=True).count(),
-            'recent_registrations': User.query.filter(
-                User.created_at >= datetime.utcnow() - timedelta(days=7)
-            ).count(),
-            'database_size': 'N/A'  # Implement based on your database
-        }
-        
-        return jsonify({'success': True, 'stats': stats}), 200
-        
-    except Exception as e:
-        logger.error(f"Admin stats error: {str(e)}")
-        return jsonify({'success': False, 'message': 'Failed to get stats'}), 500
-
-# --------------------------------------------------------
-# SSL Certificate Generation Function
-# --------------------------------------------------------
-def create_ssl_certificate():
-    try:
-        from datetime import datetime, timedelta
-        from cryptography import x509
-        from cryptography.x509.oid import NameOID
-        from cryptography.hazmat.primitives import serialization, hashes
-        from cryptography.hazmat.primitives.asymmetric import rsa
-        import ipaddress
-
-        # Generate private key
-        private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048
-        )
-
-        # Create certificate subject
-        subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Local"),
-            x509.NameAttribute(NameOID.LOCALITY_NAME, "Development"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "VaultGuard"),
-            x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
-        ])
-
-        # Create certificate
-        cert = x509.CertificateBuilder().subject_name(
-            subject
-        ).issuer_name(
-            issuer
-        ).public_key(
-            private_key.public_key()
-        ).serial_number(
-            x509.random_serial_number()
-        ).not_valid_before(
-            datetime.utcnow()
-        ).not_valid_after(
-            datetime.utcnow() + timedelta(days=365)
-        ).add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.DNSName("127.0.0.1"),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-            ]),
-            critical=False,
-        ).sign(private_key, hashes.SHA256())
-
-        # Write certificate to file
-        with open('cert.pem', 'wb') as f:
-            f.write(cert.public_bytes(serialization.Encoding.PEM))
-
-        # Write private key to file
-        with open('key.pem', 'wb') as f:
-            f.write(private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()
-            ))
-
-        print("SSL certificates generated successfully!")
-        return True
-        
-    except ImportError:
-        logger.error("Cryptography package required for SSL certificates.")
-        print("Please install the cryptography package:")
-        print("pip install cryptography")
-        return False
-    except Exception as e:
-        logger.error(f"SSL certificate generation failed: {str(e)}")
-        print(f"Error generating SSL certificates: {str(e)}")
-        return False
-
-# --------------------------------------------------------
-# Application Startup and Configuration
-# --------------------------------------------------------
-def create_default_admin():
-    """Create default admin user if none exists"""
-    if User.query.count() == 0:
-        try:
-            admin_password = os.environ.get('ADMIN_PASSWORD') or secrets.token_urlsafe(16)
-            
-            salt = secrets.token_bytes(64)
-            encryption_salt = base64.b64encode(salt).decode('utf-8')
-            
-            admin_user = User(
-                username='admin',
-                email=os.environ.get('ADMIN_EMAIL'),
-                encryption_salt=encryption_salt,
-                email_notifications=True,
-                security_alerts=True
-            )
-            admin_user.set_password(admin_password)
-            
-            db.session.add(admin_user)
-            db.session.commit()
-            
-            print(f"Default admin user created:")
-            print(f"Username: admin")
-            print(f"Password: {admin_password}")
-            print("Please change this password after first login!")
-            
-            SecurityLog.create_log(admin_user.id, 'ACCOUNT_CREATED', 'Default admin account created')
-            
-        except Exception as e:
-            logger.error(f"Failed to create admin user: {e}")
-
-# Add this to prevent timeouts
-@app.before_request
-def extend_session():
-    session.permanent = True
-    app.permanent_session_lifetime = timedelta(minutes=30)
-    
-# --------------------------------------------------------
-# Run Application with Enhanced Security
-# --------------------------------------------------------
-# --------------------------------------------------------
-# Application Startup and Configuration
-# --------------------------------------------------------
-def create_default_admin():
-    """Create default admin user if none exists"""
-    if User.query.count() == 0:
-        try:
-            admin_password = os.environ.get('ADMIN_PASSWORD') or secrets.token_urlsafe(16)
-            
-            salt = secrets.token_bytes(64)
-            encryption_salt = base64.b64encode(salt).decode('utf-8')
-            
-            admin_user = User(
-                username='admin',
-                email=os.environ.get('ADMIN_EMAIL'),
-                encryption_salt=encryption_salt,
-                email_notifications=True,
-                security_alerts=True
-            )
-            admin_user.set_password(admin_password)
-            
-            db.session.add(admin_user)
-            db.session.commit()
-            
-            print(f"Default admin user created:")
-            print(f"Username: admin")
-            print(f"Password: {admin_password}")
-            print("Please change this password after first login!")
-            
-            SecurityLog.create_log(admin_user.id, 'ACCOUNT_CREATED', 'Default admin account created')
-            
-        except Exception as e:
-            logger.error(f"Failed to create admin user: {e}")
-
-# Add this to prevent timeouts
-@app.before_request
-def extend_session():
-    session.permanent = True
-    app.permanent_session_lifetime = timedelta(minutes=30)
-
-
-def initialize_ai_guardian():
-    """Initialize AI Guardian safely"""
-    global ai_guardian
-    try:
-        ai_guardian = create_ai_guardian(db.session, NotificationService)
-        logger.info("✅ AI Guardian initialized successfully")
-        
-        # Get model status
-        status = ai_guardian.detector.get_model_status()
-        logger.info(f"🤖 AI Model Status: {status['model_type']}, Profiles: {status.get('user_profiles', 0)}")
-        
-        return True
-    except Exception as e:
-        logger.error(f"❌ AI Guardian initialization failed: {e}")
-        logger.warning("⚠️ Application will run without AI threat detection")
-        return False
-    
-    
-# --------------------------------------------------------
-# Run Application with Enhanced Security
-# --------------------------------------------------------
-# ===== ADD THIS SECTION TO app.py (Replace existing initialization) =====
-# Location: After "if __name__ == '__main__':" section (around line 2050)
-
-if __name__ == '__main__':
-    # Initialize database first
-    with app.app_context():
-        db.create_all()
-        create_default_admin()
-        logger.info("Database initialized successfully")
-        
-        # ✅ CRITICAL FIX: Initialize AND train AI Guardian
-        try:
-            from services.ai_guardian import create_ai_guardian
-            ai_guardian = create_ai_guardian(db.session, NotificationService)
-            
-            # 🤖 Train AI from existing security logs
-            training_data = []
-            try:
-                # Get last 100 login attempts for training
-                login_logs = SecurityLog.query.filter(
-                    SecurityLog.event_type.in_(['LOGIN_SUCCESS', 'LOGIN_FAILED'])
-                ).order_by(SecurityLog.timestamp.desc()).limit(100).all()
-                
-                for log in login_logs:
-                    user = User.query.get(log.user_id)
-                    if user:
-                        training_data.append({
-                            'user_id': user.id,
-                            'ip_address': log.ip_address or '0.0.0.0',
-                            'user_agent': log.user_agent or '',
-                            'timestamp': log.timestamp,
-                            'failed_attempts': 0 if log.event_type == 'LOGIN_SUCCESS' else 1,
-                            'time_since_last_login': 0,
-                            'device_hash': '',
-                            'is_new_device': False,
-                            'is_trusted_device': True,
-                            'is_success': log.event_type == 'LOGIN_SUCCESS'
-                        })
-                
-                if len(training_data) >= 5:
-                    ai_guardian.detector.train_model(training_data)
-                    logger.info(f"✅ AI Guardian trained with {len(training_data)} historical logins")
-                else:
-                    logger.info(f"⚠️ Limited training data: {len(training_data)} samples (need 5+)")
+                    <p class="username-display">👤 ${escapeHtml(item.username)}</p>
+                    <div class="password-preview">🔐 Password: ••••••••••• (AES-256 Encrypted)</div>
                     
-            except Exception as train_error:
-                logger.warning(f"AI training skipped: {train_error}")
+                    <div class="security-indicators">
+                        <span class="strength-indicator ${strengthClass}">
+                            Strength: ${item.strength_score || 0}%
+                        </span>
+                        ${item.is_compromised ? '<span class="compromised-indicator">⚠️ Compromised</span>' : ''}
+                    </div>
+                    
+                    ${item.notes ? `<div class="password-notes">📝 ${escapeHtml(item.notes)}</div>` : ''}
+                    
+                    <div class="access-info">
+                        <span class="access-count">Accessed: ${item.access_count || 0} times</span>
+                        <span class="last-accessed">Last: ${lastAccessed}</span>
+                    </div>
+                    
+                    ${item.updated_at !== item.created_at ? `<div class="updated-date">Last updated: ${formatTimestamp(item.updated_at)}</div>` : ''}
+                </div>
+                <div class="vault-actions">
+                    <button id="copy-btn-${item.id}" class="vault-btn copy-btn" onclick="copyVaultPassword(${item.id})" title="Secure copy">
+                        📋 <span>Copy</span>
+                    </button>
+                    <button id="view-btn-${item.id}" class="vault-btn view-btn" onclick="viewVaultPassword(${item.id})" title="Decrypt & view">
+                        👁️ <span>View</span>
+                    </button>
+                    <button id="edit-btn-${item.id}" class="vault-btn edit-btn" onclick="editVaultPassword(${item.id})" title="Edit entry">
+                        ✏️ <span>Edit</span>
+                    </button>
+                    <button id="delete-btn-${item.id}" class="vault-btn delete-btn" onclick="deleteVaultPassword(${item.id})" title="Secure delete">
+                        🗑️ <span>Delete</span>
+                    </button>
+                </div>
+            </li>
+        `;
+    }).join('');
+}
+
+function getStrengthClass(score) {
+    if (score >= 80) return 'excellent';
+    if (score >= 60) return 'good';
+    if (score >= 40) return 'fair';
+    return 'poor';
+}
+
+function displayEmptyVault() {
+    if (vaultFilter) {
+        elements.vaultList.innerHTML = `
+            <li class="empty-vault">
+                <div class="empty-vault-content">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+                    <h3>No Results Found</h3>
+                    <p>No passwords match your search for "${vaultFilter}"</p>
+                    <button onclick="clearVaultFilter()" class="clear-filter-btn">Clear Filter</button>
+                </div>
+            </li>`;
+    } else {
+        elements.vaultList.innerHTML = `
+            <li class="empty-vault">
+                <div class="empty-vault-content">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🔐</div>
+                    <h3>Your Secure Vault is Empty</h3>
+                    <p>Add your first password to experience military-grade encryption!</p>
+                    <div class="security-reminder">
+                        <strong>Enhanced Features:</strong> Smart notifications, breach detection, security audit, and more!
+                    </div>
+                    <div class="security-features">
+                        <div class="feature">🛡️ AES-256 + PBKDF2</div>
+                        <div class="feature">🔍 Real-time Breach Check</div>
+                        <div class="feature">📧 Smart Notifications</div>
+                        <div class="feature">📊 Security Dashboard</div>
+                        <div class="feature">🔑 Password Recovery</div>
+                        <div class="feature">🚫 Zero-Knowledge</div>
+                    </div>
+                </div>
+            </li>`;
+    }
+}
+
+function displayVaultStats(visibleCount) {
+    // Remove existing stats
+    const existingStats = document.querySelector('.vault-stats');
+    if (existingStats) {
+        existingStats.remove();
+    }
+    
+    const compromisedCount = vaultData.filter(item => item.is_compromised).length;
+    const weakCount = vaultData.filter(item => (item.strength_score || 0) < 50).length;
+    const strongCount = vaultData.filter(item => (item.strength_score || 0) >= 80).length;
+    
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'vault-stats';
+    statsDiv.innerHTML = `
+        <div class="stats-grid">
+            <div class="stat-item">
+                <span class="stat-value">${visibleCount}</span>
+                <span class="stat-label">${vaultFilter ? 'Filtered' : 'Total'} Passwords</span>
+            </div>
+            <div class="stat-item ${strongCount > 0 ? 'good' : ''}">
+                <span class="stat-value">${strongCount}</span>
+                <span class="stat-label">Strong (80%+)</span>
+            </div>
+            <div class="stat-item ${compromisedCount > 0 ? 'critical' : 'good'}">
+                <span class="stat-value">${compromisedCount}</span>
+                <span class="stat-label">Compromised</span>
+            </div>
+            <div class="stat-item ${weakCount > 0 ? 'warning' : 'good'}">
+                <span class="stat-value">${weakCount}</span>
+                <span class="stat-label">Weak (<50%)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">${50 - vaultData.length}</span>
+                <span class="stat-label">Remaining Slots</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">${securityScore}%</span>
+                <span class="stat-label">Security Score</span>
+            </div>
+        </div>
+    `;
+    
+    if (elements.vaultList && elements.vaultList.parentNode) {
+        elements.vaultList.parentNode.insertBefore(statsDiv, elements.vaultList);
+    }
+}
+
+function filterVaultEntries(searchTerm) {
+    vaultFilter = searchTerm.toLowerCase();
+    updateVaultDisplay();
+}
+
+function sortVaultEntries(sortBy) {
+    vaultSortBy = sortBy;
+    updateVaultDisplay();
+}
+
+function clearVaultFilter() {
+    vaultFilter = '';
+    if (elements.vaultSearch) {
+        elements.vaultSearch.value = '';
+    }
+    if (elements.clearSearch) {
+        elements.clearSearch.style.display = 'none';
+    }
+    updateVaultDisplay();
+}
+
+// ===== VAULT OPERATIONS =====
+async function copyVaultPassword(id) {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showButtonLoading(`copy-btn-${id}`, 'Copying...');
+        
+        const response = await fetch(`/api/vault/${id}/password`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await navigator.clipboard.writeText(data.password);
+            showNotification('Password securely copied to clipboard!', 'success');
             
-            logger.info("✅ AI Guardian fully initialized and ready")
+            // Security: Clear clipboard after 30 seconds
+            setTimeout(() => {
+                navigator.clipboard.writeText('').catch(() => {});
+            }, 30000);
             
-        except Exception as e:
-            logger.error(f"❌ AI Guardian initialization failed: {e}")
-            logger.warning("⚠️ Application will run without AI threat detection")
-            ai_guardian = None
+            // Update access count
+            await loadVaultData();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to copy password:', error);
+        showNotification('Failed to copy password', 'error');
+    } finally {
+        hideButtonLoading(`copy-btn-${id}`, '📋 Copy');
+    }
+}
+
+async function viewVaultPassword(id) {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
     
-    print("=" * 80)
-    print("🛡️  VAULTGUARD SECURE - ENHANCED VERSION")
-    print("=" * 80)
-    print("🔧 NEW FEATURES INCLUDED:")
-    print("   ✅ Email & SMS Notifications")
-    print("   ✅ Password Reset via Email/Phone")
-    print("   ✅ Security Dashboard & Analytics")
-    print("   ✅ Device Management & Trust")
-    print("   ✅ Advanced Breach Detection")
-    print("   ✅ Vault Security Audit")
-    print("   ✅ Export/Import Functionality")
-    print("   ✅ Enhanced Security Logging")
-    print("   ✅ Notification Preferences")
-    print("   ✅ Two-Factor Ready Architecture")
+    try {
+        showButtonLoading(`view-btn-${id}`, 'Decrypting...');
+        
+        const response = await fetch(`/api/vault/${id}/password`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const item = vaultData.find(item => item.id === id);
+            displayPasswordModal(item, data.password);
+            
+            // Update access count
+            await loadVaultData();
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to view password:', error);
+        showNotification('Failed to decrypt password', 'error');
+    } finally {
+        hideButtonLoading(`view-btn-${id}`, '👁️ View');
+    }
+}
+
+function editVaultPassword(id) {
+    const item = vaultData.find(item => item.id === id);
+    if (!item) return;
     
-    if ai_guardian:
-        status = ai_guardian.detector.get_model_status()
-        print(f"   🤖 AI Guardian: {status['model_type']} ({status['user_profiles']} profiles)")
-    else:
-        print("   ⚠️ AI Guardian: Disabled")
+    // Populate the form with existing data
+    elements.siteName.value = item.site;
+    elements.vaultUsername.value = item.username;
+    elements.vaultCategory.value = item.category || 'General';
+    elements.vaultNotes.value = item.notes || '';
     
-    print("=" * 80)
+    // Focus on password field for editing
+    elements.vaultPassword.focus();
+    elements.vaultPassword.placeholder = 'Enter new password (leave empty to keep current)';
     
-    # ... rest of your startup code ...
-    # Environment setup instructions
-    print("\n🔧 ENVIRONMENT SETUP:")
-    print("For full functionality, set these environment variables:")
-    print("• MAIL_SERVER=smtp.gmail.com")
-    print("• MAIL_USERNAME=your-email@gmail.com")
-    print("• MAIL_PASSWORD=your-app-password")
-    print("• TWILIO_ACCOUNT_SID=your-twilio-sid (for SMS)")
-    print("• TWILIO_AUTH_TOKEN=your-twilio-token")
-    print("• DATABASE_URL=your-database-url (optional)")
-    print("• SECRET_KEY=your-secret-key (optional)")
+    showNotification('Edit mode: Update the fields and save to modify this entry', 'info');
     
-    # SSL certificate handling
-    ssl_context = None
-    cert_exists = os.path.exists('cert.pem') and os.path.exists('key.pem')
+    // Scroll to form
+    elements.siteName.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deleteVaultPassword(id) {
+    const item = vaultData.find(item => item.id === id);
+    if (!item) return;
     
-    if not cert_exists:
-        print("\n🔒 SSL certificates not found. Generating new certificates...")
-        if create_ssl_certificate():
-            print("✅ SSL certificates created successfully!")
-            cert_exists = True
-        else:
-            print("❌ Could not create SSL certificates. Running without HTTPS.")
+    if (!confirm(`⚠️ Permanently delete password for "${item.site}"?\n\nThis action cannot be undone and will remove the encrypted data.`)) {
+        return;
+    }
     
-    if cert_exists:
-        ssl_context = ('cert.pem', 'key.pem')
-        print("\n🔒 HTTPS ENABLED - Secure connection established")
-        print("\n🌐 ACCESS URLS:")
-        print("• Primary: https://127.0.0.1:5000")
-        print("• Alternative: https://localhost:5000")
-        print("\n⚠️  BROWSER SECURITY WARNING:")
-        print("Your browser will show a security warning for self-signed certificates.")
-        print("This is normal - click 'Advanced' then 'Proceed to 127.0.0.1 (unsafe)'")
-        print("Your connection will still be fully encrypted with HTTPS.")
-    else:
-        print("\n⚠️  Running without HTTPS - Some features will be limited")
-        print("🌐 Access your app at: http://127.0.0.1:5000")
+    try {
+        showButtonLoading(`delete-btn-${id}`, 'Deleting...');
+        
+        const response = await fetch(`/api/vault/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await loadVaultData();
+            showNotification('Password securely deleted', 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to delete password:', error);
+        showNotification('Failed to delete password', 'error');
+    } finally {
+        hideButtonLoading(`delete-btn-${id}`, '🗑️ Delete');
+    }
+}
+
+// ===== SECURITY DASHBOARD =====
+async function toggleSecurityDashboard() {
+    if (!elements.securityDashboard) return;
     
-    print("=" * 80)
+    if (elements.securityDashboard.style.display === 'none' || !elements.securityDashboard.style.display) {
+        await loadSecurityDashboard();
+    } else {
+        elements.securityDashboard.style.display = 'none';
+    }
+}
+
+async function loadSecurityDashboard() {
+    try {
+        const response = await fetch('/api/security/dashboard', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            dashboardData = data.dashboard;
+            updateDashboardDisplay(dashboardData);
+            elements.securityDashboard.style.display = 'block';
+            
+            // 🔥 ADD THIS ONE LINE
+            await loadAIThreatStats();
+        } else {
+            showNotification('Failed to load security dashboard', 'error');
+        }
+    } catch (error) {
+        console.error('Dashboard error:', error);
+        showNotification('Network error loading dashboard', 'error');
+    }
+}
+
+function updateDashboardDisplay(dashboard) {
+    // Update metrics
+    const metrics = {
+        securityScoreMetric: dashboard.security_score,
+        totalPasswordsMetric: dashboard.total_passwords,
+        compromisedMetric: dashboard.compromised_passwords,
+        weakMetric: dashboard.weak_passwords
+    };
     
-    # Start the application
-    try:
-        app.run(
-            host='127.0.0.1', 
-            port=5000, 
-            ssl_context=ssl_context,
-            debug=os.environ.get('FLASK_ENV') == 'development',
-            threaded=True
-        )
-    except Exception as e:
-        logger.error(f"Failed to start application: {str(e)}")
-        print(f"\n❌ Error starting application: {str(e)}")
-        print("\n🔧 TROUBLESHOOTING:")
-        print("1. Make sure port 5000 is not already in use")
-        print("2. Try running without SSL if certificate issues persist")
-        print("3. Check that all required packages are installed:")
-        print("   pip install flask flask-sqlalchemy flask-bcrypt flask-login")
-        print("   pip install cryptography zxcvbn bleach requests")
-        print("4. Ensure you have write permissions in the current directory")
+    Object.entries(metrics).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            element.style.animation = 'fadeIn 0.5s ease-out';
+        }
+    });
+    
+    // Update security trend
+    const trendElement = document.getElementById('securityTrend');
+    if (trendElement) {
+        if (dashboard.security_score >= 80) {
+            trendElement.textContent = '✅ Excellent';
+            trendElement.className = 'metric-trend excellent';
+        } else if (dashboard.security_score >= 60) {
+            trendElement.textContent = '👍 Good';
+            trendElement.className = 'metric-trend good';
+        } else if (dashboard.security_score >= 40) {
+            trendElement.textContent = '⚠️ Fair';
+            trendElement.className = 'metric-trend warning';
+        } else {
+            trendElement.textContent = '❌ Poor';
+            trendElement.className = 'metric-trend critical';
+        }
+    }
+    
+    // Update recent activity
+    const activityList = document.getElementById('recentActivityList');
+    if (activityList && dashboard.recent_events) {
+        if (dashboard.recent_events.length > 0) {
+            activityList.innerHTML = dashboard.recent_events.map(event => `
+                <div class="activity-item ${event.severity.toLowerCase()}">
+                    <div class="activity-icon">${getEventIcon(event.type)}</div>
+                    <div class="activity-details">
+                        <div class="activity-description">${escapeHtml(event.description)}</div>
+                        <div class="activity-timestamp">${formatTimestamp(event.timestamp)}</div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            activityList.innerHTML = '<div class="no-activity">No recent security events</div>';
+        }
+    }
+}
+
+function getEventIcon(eventType) {
+    const icons = {
+        'LOGIN_SUCCESS': '🔐',
+        'LOGIN_FAILED': '❌',
+        'PASSWORD_ADDED': '💾',
+        'PASSWORD_ACCESSED': '👁️',
+        'PASSWORD_UPDATED': '✏️',
+        'PASSWORD_DELETED': '🗑️',
+        'SECURITY_AUDIT': '🔍',
+        'ACCOUNT_LOCKED': '🔒',
+        'SETTINGS_UPDATED': '⚙️',
+        'VAULT_EXPORTED': '📤',
+        'DEVICE_TRUSTED': '📱'
+    };
+    return icons[eventType] || '📝';
+}
+
+// ===== ENHANCED FEATURES =====
+async function runSecurityAudit() {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showNotification('Running comprehensive security audit...', 'info');
+        
+        const response = await fetch('/api/vault/security-audit', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayAuditResults(data.audit_results);
+            showNotification('Security audit completed successfully', 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Audit error:', error);
+        showNotification('Network error during audit', 'error');
+    }
+}
+
+function displayAuditResults(results) {
+    // Create audit results modal
+    const modal = document.createElement('div');
+    modal.className = 'audit-results-modal';
+    modal.innerHTML = `
+        <div class="audit-card">
+            <div class="audit-header">
+                <h2>🔍 Security Audit Results</h2>
+                <button class="close-audit" onclick="this.closest('.audit-results-modal').remove()">×</button>
+            </div>
+            <div class="audit-content">
+                <div class="audit-overview">
+                    <h3>Audit Overview</h3>
+                    <div class="audit-stats">
+                        <div class="audit-stat">
+                            <span class="stat-number">${results.total_passwords}</span>
+                            <span class="stat-label">Total Passwords</span>
+                        </div>
+                        <div class="audit-stat ${results.compromised_count > 0 ? 'critical' : 'good'}">
+                            <span class="stat-number">${results.compromised_count}</span>
+                            <span class="stat-label">Compromised</span>
+                        </div>
+                        <div class="audit-stat ${results.weak_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.weak_count}</span>
+                            <span class="stat-label">Weak</span>
+                        </div>
+                        <div class="audit-stat ${results.duplicate_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.duplicate_count}</span>
+                            <span class="stat-label">Duplicates</span>
+                        </div>
+                        <div class="audit-stat ${results.old_count > 0 ? 'warning' : 'good'}">
+                            <span class="stat-number">${results.old_count}</span>
+                            <span class="stat-label">Old (90+ days)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                ${results.compromised_count > 0 ? `
+                <div class="audit-section critical">
+                    <h4>🚨 Compromised Passwords (Immediate Action Required)</h4>
+                    <div class="compromised-list">
+                        ${results.compromised_sites.map(site => `
+                            <div class="compromised-item">
+                                <span class="site-name">${escapeHtml(site.site)}</span>
+                                <span class="username">${escapeHtml(site.username)}</span>
+                                <span class="breach-count">${site.breach_count.toLocaleString()} breaches</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${results.weak_count > 0 ? `
+                <div class="audit-section warning">
+                    <h4>⚠️ Weak Passwords</h4>
+                    <div class="weak-list">
+                        ${results.weak_sites.map(site => `
+                            <div class="weak-item">
+                                <span class="site-name">${escapeHtml(site.site)}</span>
+                                <span class="username">${escapeHtml(site.username)}</span>
+                                <span class="strength-score">${site.strength_score}% strength</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="audit-actions">
+                    <button onclick="this.closest('.audit-results-modal').remove()" class="audit-action-btn">Close Report</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+async function exportVaultData() {
+    const masterPassword = await getMasterPassword();
+    if (!masterPassword) return;
+    
+    try {
+        showNotification('Preparing secure vault export...', 'info');
+        
+        const response = await fetch('/api/vault/export', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ master_password: masterPassword, format: 'json' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Create and download file
+            const blob = new Blob([JSON.stringify(data.data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `vaultguard-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification(`Exported ${data.exported_count} passwords successfully`, 'success');
+        } else {
+            showNotification(data.message, 'error');
+        }
+    } catch (error) {
+        console.error('Export error:', error);
+        showNotification('Network error during export', 'error');
+    }
+}
+
+// ===== MANAGE DEVICES FEATURE =====
+document.getElementById('manageDevices')?.addEventListener('click', openManageDevicesModal);
+
+async function openManageDevicesModal() {
+    try {
+        const response = await fetch('/api/devices');
+        const data = await response.json();
+
+        if (!data.success) {
+            showNotification('⚠️ Failed to load device list', 'error');
+            return;
+        }
+
+        // Build modal dynamically
+        const modal = document.createElement('div');
+        modal.className = 'manage-devices-modal';
+        modal.innerHTML = `
+            <div class="modal-card">
+                <div class="modal-header">
+                    <h2>📱 Manage Trusted Devices</h2>
+                    <button class="close-modal" onclick="this.closest('.manage-devices-modal').remove()">×</button>
+                </div>
+                <div class="modal-content">
+                    ${
+                        data.devices.length > 0
+                        ? data.devices.map(d => `
+                            <div class="device-item ${d.is_current ? 'current' : ''}">
+                                <div class="device-info">
+                                    <strong>${d.device_name}</strong>
+                                    <small>IP: ${d.ip_address}</small><br>
+                                    <small>Last seen: ${d.last_seen}</small>
+                                </div>
+                                ${
+                                    d.is_trusted
+                                    ? `<span class="trusted-badge">✅ Trusted</span>`
+                                    : `<button class="trust-btn" data-id="${d.id}">Trust</button>`
+                                }
+                            </div>
+                        `).join('')
+                        : `<p style="text-align:center; color:var(--text-secondary);">No device records found.</p>`
+                    }
+                </div>
+            </div>
+        `;
+        modal.style.cssText = `
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+        document.body.appendChild(modal);
+
+        // Handle trust button click
+        modal.querySelectorAll('.trust-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const deviceId = btn.dataset.id;
+                const trustRes = await fetch(`/api/devices/${deviceId}/trust`, { method: 'POST' });
+                const trustData = await trustRes.json();
+
+                if (trustData.success) {
+                    showNotification('✅ Device marked as trusted', 'success');
+                    modal.remove();
+                    openManageDevicesModal(); // Reload list
+                } else {
+                    showNotification(trustData.message || '⚠️ Could not trust device', 'error');
+                }
+            });
+        });
+
+    } catch (err) {
+        console.error(err);
+        showNotification('❌ Error loading devices', 'error');
+    }
+}
+
+
+
+// ===== ENHANCED HELPER FUNCTIONS =====
+function formatTimestamp(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffHours < 1) {
+        return 'Just now';
+    } else if (diffHours < 24) {
+        return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays < 7) {
+        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } else {
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+}
+
+function showButtonLoading(buttonId, loadingText) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+        button.disabled = true;
+        button.textContent = loadingText;
+        button.style.opacity = '0.7';
+    }
+}
+
+function hideButtonLoading(buttonId, originalText) {
+    const button = document.getElementById(buttonId);
+    if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+        button.style.opacity = '1';
+    }
+}
+
+function showLoadingState(component) {
+    const loadingElement = document.getElementById(`${component}-loading`);
+    if (loadingElement) {
+        loadingElement.style.display = 'block';
+    }
+}
+
+function hideLoadingState(component) {
+    const loadingElement = document.getElementById(`${component}-loading`);
+    if (loadingElement) {
+        loadingElement.style.display = 'none';
+    }
+}
+
+// ===== PASSWORD GENERATOR FUNCTIONS =====
+function updateLengthDisplay(length) {
+    if (!elements.lengthValueDisplay) return;
+    
+    passwordGeneratorSettings.length = length;
+    
+    // Update color and label based on length
+    let color = '#ff4757';
+    let label = '(Weak)';
+    
+    if (length >= 32) {
+        color = '#2ed573';
+        label = '(Fortress)';
+    } else if (length >= 20) {
+        color = '#58a6ff';
+        label = '(Military)';
+    } else if (length >= 16) {
+        color = '#ffa502';
+        label = '(Strong)';
+    } else if (length >= 12) {
+        color = '#ff6348';
+        label = '(Good)';
+    }
+    
+    elements.lengthValueDisplay.style.color = color;
+    elements.lengthValueDisplay.textContent = `${length} ${label}`;
+}
+
+function generateNewPassword() {
+    if (!elements.generateBtn) return;
+    
+    elements.generateBtn.textContent = 'Generating Secure Password...';
+    elements.generateBtn.disabled = true;
+    
+    setTimeout(() => {
+        const password = generateRandomPassword();
+        if (elements.generatedPassword) {
+            elements.generatedPassword.value = password;
+            elements.generatedPassword.style.animation = 'fadeIn 0.3s ease-out';
+        }
+        
+        elements.generateBtn.textContent = '🎲 Generate Secure Password';
+        elements.generateBtn.disabled = false;
+        showNotification('Cryptographically secure password generated!', 'success');
+    }, 500);
+}
+
+async function copyGeneratedPassword() {
+    if (!elements.generatedPassword?.value) {
+        showNotification('No generated password to copy', 'warning');
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(elements.generatedPassword.value);
+        showNotification('Generated password copied securely!', 'success');
+        
+        // Security: Clear clipboard after 30 seconds
+        setTimeout(() => {
+            navigator.clipboard.writeText('').catch(() => {});
+        }, 30000);
+    } catch (err) {
+        console.error('Clipboard error:', err);
+        showNotification('Failed to copy password', 'error');
+    }
+}
+
+function useGeneratedPassword() {
+    if (!elements.generatedPassword?.value || !elements.passwordInput) {
+        showNotification('No generated password to use', 'warning');
+        return;
+    }
+    
+    elements.passwordInput.value = elements.generatedPassword.value;
+    analyzePassword(elements.generatedPassword.value);
+    showNotification('Password moved to analyzer!', 'success');
+    
+    // Scroll to analyzer if it exists
+    const analyzerSection = document.querySelector('.password-analyzer');
+    if (analyzerSection) {
+        analyzerSection.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+function updatePasswordGeneratorSettings() {
+    if (elements.lengthSlider) {
+        passwordGeneratorSettings.length = parseInt(elements.lengthSlider.value);
+    }
+    if (elements.includeUpper) {
+        passwordGeneratorSettings.includeUpper = elements.includeUpper.checked;
+    }
+    if (elements.includeLower) {
+        passwordGeneratorSettings.includeLower = elements.includeLower.checked;
+    }
+    if (elements.includeNumbers) {
+        passwordGeneratorSettings.includeNumbers = elements.includeNumbers.checked;
+    }
+    if (elements.includeSymbols) {
+        passwordGeneratorSettings.includeSymbols = elements.includeSymbols.checked;
+    }
+}
+
+function validateGeneratorSettings() {
+    const hasAnySelected = [
+        elements.includeUpper?.checked,
+        elements.includeLower?.checked,
+        elements.includeNumbers?.checked,
+        elements.includeSymbols?.checked
+    ].some(Boolean);
+    
+    if (!hasAnySelected) {
+        showNotification('At least one character type must be selected', 'warning');
+        // Auto-select lowercase as fallback
+        if (elements.includeLower) {
+            elements.includeLower.checked = true;
+            passwordGeneratorSettings.includeLower = true;
+        }
+    }
+}
+
+function generateRandomPassword(customLength = null) {
+    updatePasswordGeneratorSettings();
+    
+    const length = customLength || passwordGeneratorSettings.length;
+    let charset = '';
+    
+    // Build character set based on settings
+    if (passwordGeneratorSettings.includeUpper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (passwordGeneratorSettings.includeLower) charset += 'abcdefghijklmnopqrstuvwxyz';
+    if (passwordGeneratorSettings.includeNumbers) charset += '0123456789';
+    if (passwordGeneratorSettings.includeSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?~`';
+    
+    // Fallback to full charset if nothing selected
+    if (!charset) {
+        charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+        showNotification('No character types selected, using all types', 'warning');
+    }
+    
+    let password = '';
+    
+    // Ensure at least one character from each selected type
+    const requiredChars = [];
+    if (passwordGeneratorSettings.includeUpper) requiredChars.push('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    if (passwordGeneratorSettings.includeLower) requiredChars.push('abcdefghijklmnopqrstuvwxyz');
+    if (passwordGeneratorSettings.includeNumbers) requiredChars.push('0123456789');
+    if (passwordGeneratorSettings.includeSymbols) requiredChars.push('!@#$%^&*()_+-=[]{}|;:,.<>?~`');
+    
+    // Add one character from each required type
+    requiredChars.forEach(charSet => {
+        const randomIndex = Math.floor(Math.random() * charSet.length);
+        password += charSet[randomIndex];
+    });
+    
+    // Fill remaining length with random characters
+    const remainingLength = Math.max(0, length - requiredChars.length);
+    const array = new Uint8Array(remainingLength);
+    crypto.getRandomValues(array);
+    
+    for (let i = 0; i < remainingLength; i++) {
+        password += charset.charAt(array[i] % charset.length);
+    }
+    
+    // Shuffle the password to avoid predictable patterns
+    return shuffleString(password);
+}
+
+function shuffleString(str) {
+    const array = str.split('');
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array.join('');
+}
+
+function initializePasswordGenerator() {
+    // Auto-generate initial password if on generator page
+    if (elements.generateBtn && elements.generatedPassword) {
+        setTimeout(() => {
+            generateNewPassword();
+        }, 500);
+    }
+    
+    // Set initial slider value display
+    if (elements.lengthSlider && elements.lengthValueDisplay) {
+        updateLengthDisplay(parseInt(elements.lengthSlider.value));
+    }
+}
+
+// ===== PASSWORD MODAL FUNCTIONS =====
+function displayPasswordModal(item, password) {
+    // Remove any existing modals
+    const existingModals = document.querySelectorAll('.password-modal');
+    existingModals.forEach(modal => modal.remove());
+    
+    const modal = document.createElement('div');
+    modal.className = 'password-modal';
+    modal.innerHTML = `
+        <div class="password-modal-content">
+            <div class="modal-header">
+                <h3>🔓 Securely Decrypted Password</h3>
+                <button onclick="this.closest('.password-modal').remove()" class="close-modal-btn">×</button>
+            </div>
+            <div class="password-display">
+                <div class="password-field">
+                    <label>Site/Service:</label>
+                    <span class="field-value">${escapeHtml(item.site)}</span>
+                </div>
+                <div class="password-field">
+                    <label>Category:</label>
+                    <span class="field-value">${escapeHtml(item.category || 'General')}</span>
+                </div>
+                <div class="password-field">
+                    <label>Username:</label>
+                    <span class="field-value">${escapeHtml(item.username)}</span>
+                </div>
+                <div class="password-field">
+                    <label>Password:</label>
+                    <div class="password-reveal-container">
+                        <span class="revealed-password" id="revealed-password-${item.id}">${escapeHtml(password)}</span>
+                        <button class="reveal-toggle" onclick="togglePasswordVisibilityInModal('revealed-password-${item.id}')">👁️</button>
+                    </div>
+                </div>
+                ${item.notes ? `
+                <div class="password-field">
+                    <label>Notes:</label>
+                    <span class="field-value">${escapeHtml(item.notes)}</span>
+                </div>
+                ` : ''}
+                <div class="password-stats">
+                    <div class="stat">Created: ${formatTimestamp(item.created_at)}</div>
+                    <div class="stat">Updated: ${formatTimestamp(item.updated_at)}</div>
+                    <div class="stat">Strength: ${item.strength_score || 0}%</div>
+                    ${item.access_count ? `<div class="stat">Accessed: ${item.access_count} times</div>` : ''}
+                    ${item.last_accessed ? `<div class="stat">Last accessed: ${formatTimestamp(item.last_accessed)}</div>` : ''}
+                </div>
+                <div class="security-timer">
+                    🔒 Auto-hide in <span id="timer-${item.id}">15</span> seconds for security
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button onclick="copyPasswordFromModal('${password.replace(/'/g, "\\'")}');" class="copy-modal-btn">📋 Secure Copy</button>
+                <button onclick="analyzePasswordFromModal('${password.replace(/'/g, "\\'")}');" class="analyze-modal-btn">🔍 Analyze Security</button>
+                <button onclick="this.closest('.password-modal').remove()" class="close-modal-btn secondary">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Auto-hide countdown
+    startSecurityTimer(item.id, modal);
+    
+    // Add click outside to close
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+function startSecurityTimer(itemId, modal) {
+    let timeLeft = 15;
+    const timerElement = modal.querySelector(`#timer-${itemId}`);
+    
+    const countdown = setInterval(() => {
+        timeLeft--;
+        if (timerElement) {
+            timerElement.textContent = timeLeft;
+            
+            // Change color as time runs out
+            if (timeLeft <= 5) {
+                timerElement.style.color = '#ff4757';
+                timerElement.style.fontWeight = 'bold';
+            }
+        }
+        
+        if (timeLeft <= 0) {
+            clearInterval(countdown);
+            if (modal.parentNode) {
+                modal.style.animation = 'modalFadeOut 0.3s ease-out';
+                setTimeout(() => modal.remove(), 300);
+            }
+        }
+    }, 1000);
+}
+
+function togglePasswordVisibilityInModal(passwordElementId) {
+    const passwordElement = document.getElementById(passwordElementId);
+    const toggleButton = passwordElement?.nextElementSibling;
+    
+    if (passwordElement) {
+        if (passwordElement.style.filter === 'blur(5px)') {
+            passwordElement.style.filter = '';
+            if (toggleButton) toggleButton.textContent = '🙈';
+        } else {
+            passwordElement.style.filter = 'blur(5px)';
+            if (toggleButton) toggleButton.textContent = '👁️';
+        }
+    }
+}
+
+async function copyPasswordFromModal(password) {
+    try {
+        await navigator.clipboard.writeText(password);
+        showNotification('Password securely copied!', 'success');
+        
+        // Security: Clear clipboard after 30 seconds
+        setTimeout(() => {
+            navigator.clipboard.writeText('').catch(() => {});
+        }, 30000);
+    } catch (error) {
+        console.error('Failed to copy password:', error);
+        showNotification('Failed to copy password', 'error');
+    }
+}
+
+function analyzePasswordFromModal(password) {
+    // Close modal
+    const modal = document.querySelector('.password-modal');
+    if (modal) modal.remove();
+    
+    // Set password in analyzer and analyze
+    if (elements.passwordInput) {
+        elements.passwordInput.value = password;
+        analyzePassword(password);
+        
+        // Scroll to analyzer
+        const analyzerSection = document.querySelector('.password-analyzer');
+        if (analyzerSection) {
+            analyzerSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        showNotification('Password moved to security analyzer!', 'success');
+    }
+}
+
+// ===== UTILITY FUNCTIONS =====
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ===== SECURITY FUNCTIONS =====
+function checkSecureContext() {
+    if (!window.isSecureContext) {
+        showNotification('Warning: Not running in secure context. Some features may be limited.', 'warning');
+        return false;
+    }
+    return true;
+}
+
+function handleVisibilityChange() {
+    if (document.hidden && masterPasswordCache) {
+        // Clear master password cache when tab becomes hidden
+        setTimeout(() => {
+            if (document.hidden) { // Double-check it's still hidden
+                masterPasswordCache = null;
+                showNotification('Master password cleared for security', 'info');
+            }
+        }, 30000);
+    }
+}
+
+function handleKeyboardShortcuts(event) {
+    // Ctrl+G: Generate password
+    if (event.ctrlKey && event.key === 'g') {
+        event.preventDefault();
+        if (elements.passwordInput) {
+            generateAndAnalyzePassword();
+        } else if (elements.generateBtn) {
+            generateNewPassword();
+        }
+    }
+    
+    // Ctrl+C: Copy password (when focused on password input)
+    if (event.ctrlKey && event.key === 'c' && document.activeElement === elements.passwordInput) {
+        event.preventDefault();
+        copyPasswordToClipboard();
+    }
+    
+    // Escape: Close modals
+    if (event.key === 'Escape') {
+        if (elements.authModal?.classList.contains('show')) {
+            closeAuthModal();
+        }
+        
+        if (elements.securityDashboard?.style.display === 'block') {
+            elements.securityDashboard.style.display = 'none';
+        }
+        
+        if (elements.notificationSettingsModal?.style.display === 'block') {
+            elements.notificationSettingsModal.style.display = 'none';
+        }
+        
+        const passwordModal = document.querySelector('.password-modal');
+        if (passwordModal) {
+            passwordModal.remove();
+        }
+        
+        const auditModal = document.querySelector('.audit-results-modal');
+        if (auditModal) {
+            auditModal.remove();
+        }
+    }
+    
+    // Ctrl+L: Focus on login
+    if (event.ctrlKey && event.key === 'l') {
+        event.preventDefault();
+        if (elements.loginBtn) {
+            openAuthModal();
+        }
+    }
+    
+    // Ctrl+D: Open dashboard (if logged in)
+    if (event.ctrlKey && event.key === 'd') {
+        event.preventDefault();
+        if (elements.securityDashboardBtn) {
+            toggleSecurityDashboard();
+        }
+    }
+    
+    // Ctrl+S: Save password (if in vault)
+    if (event.ctrlKey && event.key === 's') {
+        event.preventDefault();
+        if (elements.savePasswordBtn && !elements.savePasswordBtn.disabled) {
+            savePassword();
+        }
+    }
+}
+
+function recordPerformanceMetric(metric, value) {
+    performanceMetrics[metric] = value;
+    
+    // Log performance issues
+    if (metric === 'analysisTime' && value > 1000) {
+        console.warn('Password analysis taking longer than expected:', value + 'ms');
+    }
+    
+    if (metric === 'apiCallCount' && value > 100) {
+        console.warn('High API call count detected:', value);
+    }
+}
+
+function showSecurityStatus() {
+    setTimeout(() => {
+        if (location.protocol === 'https:') {
+            showNotification('Secure HTTPS connection established with enhanced features', 'success');
+        } else {
+            showNotification('Warning: Use HTTPS for maximum security and all features', 'warning');
+        }
+    }, 1000);
+}
+
+// ===== ENHANCED NOTIFICATION SYSTEM =====
+function showNotification(message, type = 'success') {
+    // Remove existing notifications of the same type
+    const existingNotifications = document.querySelectorAll(`.notification.${type}`);
+    existingNotifications.forEach(notification => {
+        notification.style.animation = 'slideOutRight 0.3s ease-in';
+        setTimeout(() => notification.remove(), 300);
+    });
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    const colors = {
+        success: 'linear-gradient(135deg, #2ed573, #17d97a)',
+        error: 'linear-gradient(135deg, #ff4757, #ff3742)',
+        info: 'linear-gradient(135deg, #3742fa, #2f3542)',
+        warning: 'linear-gradient(135deg, #ffa502, #ff6348)'
+    };
+    
+    const icons = {
+        success: '✅',
+        error: '❌',
+        info: 'ℹ️',
+        warning: '⚠️'
+    };
+    
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${colors[type] || colors.success};
+        color: white;
+        padding: 16px 24px;
+        border-radius: 12px;
+        z-index: 10000;
+        font-weight: 600;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        word-wrap: break-word;
+        animation: slideInRight 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    `;
+    
+    notification.innerHTML = `<span style="margin-right: 8px;">${icons[type] || icons.success}</span>${message}`;
+    
+    // Click to dismiss
+    notification.addEventListener('click', () => {
+        notification.style.animation = 'slideOutRight 0.3s ease-in';
+        setTimeout(() => notification.remove(), 300);
+    });
+    
+    // Hover effect
+    notification.addEventListener('mouseenter', () => {
+        notification.style.transform = 'translateY(-2px) scale(1.02)';
+    });
+    
+    notification.addEventListener('mouseleave', () => {
+        notification.style.transform = 'translateY(0) scale(1)';
+    });
+    
+    document.body.appendChild(notification);
+    
+    // Auto-hide based on type
+    const autoHideTime = type === 'error' ? 6000 : 4000;
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideOutRight 0.3s ease-in';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, autoHideTime);
+}
+
+
+// ===== TEST NOTIFICATION FEATURE =====
+async function sendTestNotification() {
+    try {
+        showNotification('🔔 Sending test notification...', 'info');
+
+        const response = await fetch('/api/notify/test', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('✅ Test notification sent successfully! Check your email or SMS.', 'success');
+        } else {
+            showNotification(data.message || '⚠️ Notification could not be sent.', 'error');
+        }
+    } catch (error) {
+        console.error('Notification test failed:', error);
+        showNotification('❌ Server error while sending test notification', 'error');
+    }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+
+    // 1 – Check if backend requires 2FA
+    try {
+        const res = await fetch("/api/me");
+        const data = await res.json();
+
+        if (data.force_2fa === true) {
+            show2FAModal();
+            return; 
+        }
+        
+        // 🔥 FIX: Only load AI stats if authenticated
+        if (data.authenticated) {
+            loadAIThreatStats();
+        }
+        
+    } catch (e) {
+        console.error("2FA check failed", e);
+    }
+
+    // 2 – Attach notification test button ONLY if logged in
+    if (document.body.classList.contains('logged-in')) {
+        const testNotificationBtn = document.getElementById('testNotifications');
+        if (testNotificationBtn) {
+            testNotificationBtn.addEventListener('click', sendTestNotification);
+        }
+    }
+
+    // 3 – Load dashboard normally (but don't call AI stats here - we do it above)
+    if (typeof loadSecurityDashboard === 'function') {
+        loadSecurityDashboard();
+    }
+});
+
+
+// ===== ENHANCED CSS STYLES =====
+function addEnhancedStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+        /* Enhanced Animations */
+        @keyframes strengthPulse {
+            0%, 100% { 
+                box-shadow: 0 0 15px rgba(46, 213, 115, 0.6);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 25px rgba(46, 213, 115, 0.9);
+                transform: scale(1.02);
+            }
+        }
+        
+        @keyframes breachPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.85) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        
+        @keyframes modalFadeOut {
+            from { opacity: 1; transform: scale(1) translateY(0); }
+            to { opacity: 0; transform: scale(0.85) translateY(-20px); }
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slideOutRight {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        /* Enhanced Security Score Badge */
+        .security-score-badge {
+            background: linear-gradient(135deg, #3742fa, #5352ed);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            transition: all 0.3s ease;
+        }
+        
+        .security-score-badge::before {
+            content: '🛡️';
+            font-size: 1rem;
+        }
+        
+        .security-score-badge.excellent {
+            background: linear-gradient(135deg, #2ed573, #17d97a);
+        }
+        
+        .security-score-badge.good {
+            background: linear-gradient(135deg, #58a6ff, #4f94d4);
+        }
+        
+        .security-score-badge.fair {
+            background: linear-gradient(135deg, #ffa502, #ff6348);
+        }
+        
+        .security-score-badge.poor {
+            background: linear-gradient(135deg, #ff4757, #ff3742);
+        }
+        
+        /* Enhanced Header Buttons */
+        .header-btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+            padding: 0.6rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .header-btn:hover {
+            background: var(--glass-border);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Enhanced Dashboard Styles */
+        .security-dashboard-card {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 400px;
+            max-height: 80vh;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-elevated);
+            z-index: 1000;
+            overflow-y: auto;
+            animation: modalFadeIn 0.3s ease-out;
+        }
+        
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .close-dashboard {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        
+        .close-dashboard:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .security-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+        
+        .metric-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-bottom: 0.5rem;
+        }
+        
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        
+        .metric-trend {
+            font-size: 0.7rem;
+            margin-top: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        
+        .metric-trend.excellent {
+            background: rgba(46, 213, 115, 0.2);
+            color: #2ed573;
+        }
+        
+        .metric-trend.good {
+            background: rgba(88, 166, 255, 0.2);
+            color: #58a6ff;
+        }
+        
+        .metric-trend.warning {
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+        }
+        
+        .metric-trend.critical {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+        }
+        
+        /* Enhanced Vault Item Styles */
+        .vault-item.compromised {
+            border-left: 4px solid #ff4757;
+            background: rgba(255, 71, 87, 0.05);
+        }
+        
+        .category-badge {
+            background: var(--accent-blue);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        
+        .strength-indicator {
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .strength-indicator.excellent {
+            background: rgba(46, 213, 115, 0.2);
+            color: #2ed573;
+        }
+        
+        .strength-indicator.good {
+            background: rgba(88, 166, 255, 0.2);
+            color: #58a6ff;
+        }
+        
+        .strength-indicator.fair {
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+        }
+        
+        .strength-indicator.poor {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+        }
+        
+        .compromised-indicator {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            animation: breachPulse 2s ease-in-out infinite;
+        }
+        
+        .security-indicators {
+            display: flex;
+            gap: 0.5rem;
+            margin: 0.5rem 0;
+            flex-wrap: wrap;
+        }
+        
+        .password-notes {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            padding: 0.5rem;
+            border-radius: 8px;
+            margin: 0.5rem 0;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        
+        .access-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+        
+        /* Responsive Design Improvements */
+        @media (max-width: 768px) {
+            .security-dashboard-card {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100%;
+                max-height: 100vh;
+                border-radius: 0;
+            }
+            
+            .security-metrics {
+                grid-template-columns: 1fr;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// ===== CONSOLE SECURITY WARNING =====
+function showSecurityWarning() {
+    console.log('%c🛡️ VaultGuard Enhanced Security Notice', 'color: #2ed573; font-size: 16px; font-weight: bold;');
+    console.log('%cThis enhanced application handles sensitive password data with military-grade security.', 'color: #ffa502; font-size: 12px;');
+    console.log('%cFeatures: HTTPS, AES-256, Real-time breach detection, Smart notifications, Security dashboard', 'color: #58a6ff; font-size: 12px;');
+    console.log('%cDo not paste or execute unknown code in this console.', 'color: #ff4757; font-size: 12px;');
+    console.log('%cAll passwords are encrypted with AES-256 and monitored for breaches.', 'color: #58a6ff; font-size: 12px;');
+}
+
+// ===== ERROR HANDLING =====
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+    showNotification('An unexpected error occurred', 'error');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    showNotification('Network or server error occurred', 'error');
+    event.preventDefault();
+});
+
+// ===== SECURITY CLEANUP ON PAGE UNLOAD =====
+window.addEventListener('beforeunload', () => {
+    // Clear sensitive data
+    masterPasswordCache = null;
+    
+    // Clear any password displays
+    const passwordDisplays = document.querySelectorAll('.revealed-password');
+    passwordDisplays.forEach(el => {
+        el.textContent = '••••••••••';
+    });
+    
+    // Clear clipboard (best effort)
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText('').catch(() => {});
+    }
+    
+    // Clear form data
+    if (elements.passwordInput) elements.passwordInput.value = '';
+    if (elements.generatedPassword) elements.generatedPassword.value = '';
+    if (elements.vaultPassword) elements.vaultPassword.value = '';
+});
+
+// ===== GLOBAL FUNCTION EXPORTS =====
+// Make functions available globally for onclick handlers
+window.copyVaultPassword = copyVaultPassword;
+window.viewVaultPassword = viewVaultPassword;
+window.editVaultPassword = editVaultPassword;
+window.deleteVaultPassword = deleteVaultPassword;
+window.clearVaultFilter = clearVaultFilter;
+window.togglePasswordVisibilityInModal = togglePasswordVisibilityInModal;
+window.copyPasswordFromModal = copyPasswordFromModal;
+window.analyzePasswordFromModal = analyzePasswordFromModal;
+
+// Export main object for global access if needed
+window.VaultGuardEnhanced = {
+    // Core functions
+    analyzePassword,
+    generateRandomPassword,
+    openAuthModal,
+    closeAuthModal,
+    showNotification,
+    initialize,
+    
+    // Enhanced features
+    loadSecurityDashboard,
+    runSecurityAudit,
+    exportVaultData,
+    loadVaultData,
+    
+    // Utilities
+    formatTimestamp,
+    escapeHtml,
+    debounce,
+    throttle,
+    
+    // State
+    getSecurityScore: () => securityScore,
+    getVaultData: () => vaultData,
+    getDashboardData: () => dashboardData,
+    getPerformanceMetrics: () => performanceMetrics
+};
+
+// ===== MAIN INITIALIZATION =====
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize);
+} else {
+    initialize();
+}
+
+// Show security warning in console
+showSecurityWarning();
+
+// ===== ENHANCED FEATURES INITIALIZATION =====
+// Additional initialization for enhanced features
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize notification settings if logged in
+    if (document.body.classList.contains('logged-in')) {
+        // Auto-load security score
+        setTimeout(() => {
+            if (elements.securityScoreValue && securityScore > 0) {
+                elements.securityScoreValue.textContent = securityScore;
+            }
+        }, 1000);
+        
+        // Check for security warnings
+        setTimeout(() => {
+            if (dashboardData) {
+                if (dashboardData.compromised_passwords > 0) {
+                    showNotification(`⚠️ You have ${dashboardData.compromised_passwords} compromised passwords! Check your security dashboard.`, 'warning');
+                }
+                
+                if (dashboardData.password_age_warning) {
+                    showNotification('Your master password is over 90 days old. Consider updating it for better security.', 'warning');
+                }
+            }
+        }, 3000);
+    }
+    
+    // Enhanced search functionality
+    const searchInput = document.getElementById('vault-search');
+    const clearBtn = document.getElementById('clearSearch');
+    
+    if (searchInput && clearBtn) {
+        // Enhanced search with categories and notes
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            
+            if (searchTerm.length > 0) {
+                clearBtn.style.display = 'block';
+                
+                // Highlight matching results
+                const vaultItems = document.querySelectorAll('.vault-item');
+                vaultItems.forEach(item => {
+                    const siteName = item.querySelector('.site-name')?.textContent.toLowerCase() || '';
+                    const username = item.querySelector('.username-display')?.textContent.toLowerCase() || '';
+                    const category = item.querySelector('.category-badge')?.textContent.toLowerCase() || '';
+                    const notes = item.querySelector('.password-notes')?.textContent.toLowerCase() || '';
+                    
+                    const matches = siteName.includes(searchTerm) || 
+                                  username.includes(searchTerm) || 
+                                  category.includes(searchTerm) || 
+                                  notes.includes(searchTerm);
+                    
+                    if (matches) {
+                        item.style.display = 'block';
+                        item.style.border = '2px solid var(--accent-blue)';
+                        item.style.background = 'rgba(88, 166, 255, 0.05)';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            } else {
+                clearBtn.style.display = 'none';
+                
+                // Reset all items
+                const vaultItems = document.querySelectorAll('.vault-item');
+                vaultItems.forEach(item => {
+                    item.style.display = 'block';
+                    item.style.border = '';
+                    item.style.background = '';
+                });
+            }
+        });
+        
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearBtn.style.display = 'none';
+            
+            // Reset all items
+            const vaultItems = document.querySelectorAll('.vault-item');
+            vaultItems.forEach(item => {
+                item.style.display = 'block';
+                item.style.border = '';
+                item.style.background = '';
+            });
+            
+            searchInput.focus();
+        });
+    }
+    
+    // Enhanced keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+A: Run security audit
+        if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+            e.preventDefault();
+            if (elements.auditVault) {
+                runSecurityAudit();
+            }
+        }
+        
+        // Ctrl+Shift+E: Export vault
+        if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+            e.preventDefault();
+            if (elements.exportVault) {
+                exportVaultData();
+            }
+        }
+        
+        // Ctrl+Shift+N: Open notification settings
+        if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+            e.preventDefault();
+            if (elements.notificationSettingsBtn) {
+                elements.notificationSettingsBtn.click();
+            }
+        }
+        
+        // F1: Show help/shortcuts
+        if (e.key === 'F1') {
+            e.preventDefault();
+            showKeyboardShortcuts();
+        }
+    });
+    
+    // Auto-save form data to prevent loss
+    const formInputs = [elements.siteName, elements.vaultUsername, elements.vaultPassword, elements.vaultNotes];
+    formInputs.forEach(input => {
+        if (input) {
+            input.addEventListener('input', debounce(() => {
+                const formData = {
+                    site: elements.siteName?.value || '',
+                    username: elements.vaultUsername?.value || '',
+                    password: elements.vaultPassword?.value || '',
+                    notes: elements.vaultNotes?.value || '',
+                    category: elements.vaultCategory?.value || 'General'
+                };
+                
+                // Only save if there's meaningful data
+                if (formData.site || formData.username) {
+                    sessionStorage.setItem('vaultguard_form_data', JSON.stringify(formData));
+                }
+            }, 1000));
+        }
+    });
+    
+    // Restore form data on page load
+    try {
+        const savedFormData = sessionStorage.getItem('vaultguard_form_data');
+        if (savedFormData) {
+            const formData = JSON.parse(savedFormData);
+            
+            if (elements.siteName) elements.siteName.value = formData.site || '';
+            if (elements.vaultUsername) elements.vaultUsername.value = formData.username || '';
+            if (elements.vaultNotes) elements.vaultNotes.value = formData.notes || '';
+            if (elements.vaultCategory) elements.vaultCategory.value = formData.category || 'General';
+            
+            // Don't restore password for security
+            if (formData.site || formData.username) {
+                showNotification('Form data restored from previous session', 'info');
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to restore form data:', error);
+    }
+    
+    // Clear saved form data when password is saved successfully
+    if (elements.savePasswordBtn) {
+        const originalSavePassword = savePassword;
+        savePassword = async function() {
+            const result = await originalSavePassword.apply(this, arguments);
+            if (result !== false) { // If save was successful
+                sessionStorage.removeItem('vaultguard_form_data');
+            }
+            return result;
+        };
+    }
+});
+
+function showKeyboardShortcuts() {
+    const shortcuts = [
+        { key: 'Ctrl+G', action: 'Generate password' },
+        { key: 'Ctrl+C', action: 'Copy password (when focused)' },
+        { key: 'Ctrl+L', action: 'Open login modal' },
+        { key: 'Ctrl+D', action: 'Toggle security dashboard' },
+        { key: 'Ctrl+S', action: 'Save password to vault' },
+        { key: 'Ctrl+Shift+A', action: 'Run security audit' },
+        { key: 'Ctrl+Shift+E', action: 'Export vault data' },
+        { key: 'Ctrl+Shift+N', action: 'Open notification settings' },
+        { key: 'Escape', action: 'Close modals/dialogs' },
+        { key: 'F1', action: 'Show this help' }
+    ];
+    
+    const modal = document.createElement('div');
+    modal.className = 'keyboard-shortcuts-modal';
+    modal.innerHTML = `
+        <div class="shortcuts-card">
+            <div class="shortcuts-header">
+                <h2>⌨️ Keyboard Shortcuts</h2>
+                <button onclick="this.closest('.keyboard-shortcuts-modal').remove()" class="close-shortcuts">×</button>
+            </div>
+            <div class="shortcuts-content">
+                ${shortcuts.map(shortcut => `
+                    <div class="shortcut-item">
+                        <kbd class="shortcut-key">${shortcut.key}</kbd>
+                        <span class="shortcut-action">${shortcut.action}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="shortcuts-footer">
+                <p>💡 Pro tip: Most shortcuts work globally, some require focus on specific elements</p>
+            </div>
+        </div>
+    `;
+    
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10001;
+        animation: modalFadeIn 0.3s ease-out;
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close on click outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    // Auto-close after 10 seconds
+    setTimeout(() => {
+        if (modal.parentNode) {
+            modal.remove();
+        }
+    }, 10000);
+}
+
+// ===== PERIODIC SECURITY CHECKS =====
+// Run periodic security checks if logged in
+if (document.body.classList.contains('logged-in')) {
+    // Check for compromised passwords every 30 minutes
+    setInterval(async () => {
+        if (vaultData.length > 0 && currentUserSalt) {
+            const compromisedCount = vaultData.filter(item => item.is_compromised).length;
+            const weakCount = vaultData.filter(item => (item.strength_score || 0) < 50).length;
+            
+            if (compromisedCount > 0 || weakCount > 5) {
+                showNotification(`Security Alert: ${compromisedCount} compromised and ${weakCount} weak passwords detected. Run a security audit!`, 'warning');
+            }
+        }
+    }, 30 * 60 * 1000); // 30 minutes
+    
+    // Refresh security dashboard every 5 minutes
+    setInterval(async () => {
+        if (elements.securityDashboard?.style.display === 'block') {
+            await loadSecurityDashboard();
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+}
+
+// ===== PERFORMANCE MONITORING =====
+// Monitor performance and show warnings
+setInterval(() => {
+    if (performanceMetrics.apiCallCount > 50) {
+        console.warn('High API usage detected. Consider optimizing requests.');
+        performanceMetrics.apiCallCount = 0; // Reset counter
+    }
+    
+    // Check memory usage if available
+    if (performance.memory) {
+        const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024; // MB
+        if (memoryUsage > 100) {
+            console.warn(`High memory usage: ${memoryUsage.toFixed(2)}MB`);
+        }
+    }
+}, 60000); // Every minute
+
+console.log('🎉 VaultGuard Enhanced fully loaded with all security features!');
+
+
+// ===== AI GUARDIAN INTEGRATION (Enhanced) =====
+async function loadAIThreatStats() {
+    try {
+        const response = await fetch('/api/ai/threat-stats?days=7');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayAIStats(data.statistics, data.ai_model_status);
+        }
+    } catch (error) {
+        console.error('AI Guardian unavailable:', error);
+    }
+}
+
+// ===== REPLACE ENTIRE displayAIStats AND loadRecentThreatScores FUNCTIONS =====
+
+function displayAIStats(stats, modelStatus) {
+    // Remove any existing AI section first
+    const existing = document.querySelector('.ai-guardian-section');
+    if (existing) existing.remove();
+    
+    const aiStatsHTML = `
+        <div class="ai-guardian-section" style="
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.1), rgba(46, 213, 115, 0.1));
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            border-radius: 12px;
+        ">
+            <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 1.5rem;">🤖</span>
+                <span>AI Guardian Threat Intelligence</span>
+            </h3>
+            
+            <!-- Stats Grid -->
+            <div style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 1rem;
+                margin-bottom: 1rem;
+            ">
+                <div style="
+                    background: var(--card-bg);
+                    padding: 1rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    border: 1px solid var(--border-color);
+                ">
+                    <div style="font-size: 2rem; font-weight: 700; color: var(--accent-blue);">
+                        ${stats.total_analyses}
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        Logins Analyzed
+                    </div>
+                </div>
+                
+                <div style="
+                    background: var(--card-bg);
+                    padding: 1rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    border: 1px solid rgba(46, 213, 115, 0.3);
+                ">
+                    <div style="font-size: 2rem; font-weight: 700; color: #2ed573;">
+                        ${stats.safe_count}
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        ✅ Safe
+                    </div>
+                </div>
+                
+                <div style="
+                    background: var(--card-bg);
+                    padding: 1rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    border: 1px solid rgba(255, 165, 2, 0.3);
+                ">
+                    <div style="font-size: 2rem; font-weight: 700; color: #ffa502;">
+                        ${stats.suspicious_count}
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        ⚠️ Suspicious
+                    </div>
+                </div>
+                
+                <div style="
+                    background: var(--card-bg);
+                    padding: 1rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    border: 1px solid rgba(255, 71, 87, 0.3);
+                ">
+                    <div style="font-size: 2rem; font-weight: 700; color: #ff4757;">
+                        ${stats.critical_count}
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                        🚨 Critical
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Model Status -->
+            <div style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.75rem;
+                background: rgba(88, 166, 255, 0.05);
+                border-radius: 8px;
+                font-size: 0.9rem;
+                margin-bottom: 1rem;
+            ">
+                <span style="color: var(--text-secondary);">
+                    🧠 AI Engine: <strong>${modelStatus.model_type}</strong>
+                </span>
+                <span style="
+                    padding: 0.25rem 0.75rem;
+                    border-radius: 12px;
+                    font-weight: 600;
+                    ${modelStatus.is_trained ? 
+                        'background: rgba(46, 213, 115, 0.2); color: #2ed573;' : 
+                        'background: rgba(255, 165, 2, 0.2); color: #ffa502;'}
+                ">
+                    ${modelStatus.is_trained ? '✅ Active' : '⏳ Learning'}
+                </span>
+            </div>
+            
+            ${modelStatus.user_profiles > 0 ? `
+            <div style="
+                font-size: 0.85rem;
+                color: var(--text-secondary);
+                text-align: center;
+                margin-bottom: 1rem;
+            ">
+                Learning from ${modelStatus.user_profiles} user${modelStatus.user_profiles > 1 ? 's' : ''} behavior patterns
+            </div>
+            ` : ''}
+            
+            <!-- ✅ RECENT THREAT SCORES SECTION (FIXED PLACEMENT) -->
+            <div style="
+                padding: 1rem;
+                background: rgba(88, 166, 255, 0.05);
+                border-radius: 8px;
+                border: 1px solid rgba(88, 166, 255, 0.2);
+            ">
+                <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-secondary); font-weight: 600;">
+                    📊 Recent Login Threat Scores
+                </h4>
+                <div id="recent-threats-list" style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                ">
+                    <div style="text-align: center; color: var(--text-secondary); font-size: 0.85rem;">
+                        Loading threat scores...
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const dashboardContent = document.querySelector('.dashboard-content');
+    if (dashboardContent) {
+        dashboardContent.insertAdjacentHTML('beforeend', aiStatsHTML);
+        
+        // Load threat scores after HTML is inserted
+        setTimeout(() => {
+            loadRecentThreatScores();
+        }, 200);
+    }
+}
+
+// ===== REPLACE YOUR ENTIRE loadRecentThreatScores FUNCTION WITH THIS =====
+
+async function loadRecentThreatScores() {
+    const listElement = document.getElementById('recent-threats-list');
+    
+    if (!listElement) {
+        console.error('❌ Threat scores list element not found');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/security/dashboard', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        console.log('📊 Dashboard data:', data);
+        
+        if (data.success && data.dashboard && data.dashboard.recent_events) {
+            const aiEvents = data.dashboard.recent_events
+                .filter(e => e.type === 'AI_THREAT_ANALYSIS')
+                .slice(0, 5);
+            
+            console.log('🤖 AI Events found:', aiEvents.length);
+            
+            if (aiEvents.length > 0) {
+                listElement.innerHTML = aiEvents.map(event => {
+                    // Extract score from description
+                    const scoreMatch = event.description.match(/Score (\d+)/);
+                    const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
+                    
+                    // Determine threat level based on realistic thresholds
+                    let color, icon, levelText, bgColor;
+                    if (score >= 61) {  // CRITICAL
+                        color = '#ff4757';
+                        icon = '🚨';
+                        levelText = 'CRITICAL';
+                        bgColor = 'rgba(255, 71, 87, 0.1)';
+                    } else if (score >= 31) {  // SUSPICIOUS
+                        color = '#ffa502';
+                        icon = '⚠️';
+                        levelText = 'SUSPICIOUS';
+                        bgColor = 'rgba(255, 165, 2, 0.1)';
+                    } else {  // SAFE
+                        color = '#2ed573';
+                        icon = '✅';
+                        levelText = 'Safe';
+                        bgColor = 'rgba(46, 213, 115, 0.1)';
+                    }
+                    
+                    // Format timestamp
+                    const timestamp = new Date(event.timestamp).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    return `
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            padding: 0.75rem;
+                            background: ${bgColor};
+                            border-radius: 8px;
+                            border-left: 3px solid ${color};
+                            margin-bottom: 0.5rem;
+                        ">
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <span style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    ${timestamp}
+                                </span>
+                                <span style="font-size: 0.85rem; color: ${color}; font-weight: 700;">
+                                    ${levelText}
+                                </span>
+                            </div>
+                            <div style="
+                                display: flex;
+                                align-items: center;
+                                gap: 0.5rem;
+                            ">
+                                <span style="font-size: 1.5rem;">${icon}</span>
+                                <span style="
+                                    font-weight: 700;
+                                    font-size: 1.3rem;
+                                    color: ${color};
+                                ">
+                                    ${score}/100
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listElement.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        color: var(--text-secondary); 
+                        font-size: 0.85rem;
+                        padding: 1rem;
+                    ">
+                        No threat analyses recorded yet.<br>
+                        <span style="font-size: 0.75rem; opacity: 0.7;">
+                            AI will analyze your next login
+                        </span>
+                    </div>
+                `;
+            }
+        } else {
+            throw new Error('Invalid response structure');
+        }
+    } catch (error) {
+        console.error('❌ Failed to load threat scores:', error);
+        listElement.innerHTML = `
+            <div style="
+                text-align: center; 
+                color: #ff4757; 
+                font-size: 0.85rem;
+                padding: 1rem;
+            ">
+                ⚠️ Failed to load threat scores<br>
+                <span style="font-size: 0.75rem; opacity: 0.7;">
+                    ${error.message}
+                </span>
+            </div>
+        `;
+    }
+}
+
+// =======================================================
+// AI Guardian Banner Display (NEW FUNCTION)
+// =======================================================
+function displayAIThreatAlert(ai) {
+    if (!ai || !ai.threat_analysis) return;
+
+    const threat = ai.threat_analysis;
+    const score = threat.threat_score;
+    const level = threat.threat_level;
+    const message = ai.message || ai.user_message || "AI analysis complete";
+
+    let alertBox = document.getElementById("ai-alert-box");
+
+    // Create banner if missing
+    if (!alertBox) {
+        alertBox = document.createElement("div");
+        alertBox.id = "ai-alert-box";
+        document.body.prepend(alertBox);
+    }
+
+    // Styling by threat level
+    if (level === "critical") {
+        alertBox.className = "ai-alert critical";
+    } else if (level === "suspicious") {
+        alertBox.className = "ai-alert warning";
+    } else {
+        alertBox.className = "ai-alert safe";
+    }
+
+    alertBox.innerHTML = `
+        <strong>AI Guardian:</strong> ${message}
+        <br><small>Threat Score: ${score} | Level: ${level}</small>
+    `;
+
+    // Auto-hide for safe logins
+    if (level === "safe") {
+        setTimeout(() => {
+            alertBox.style.opacity = 0;
+            setTimeout(() => alertBox.remove(), 800);
+        }, 6000);
+    }
+}
+
+// Show AI threat notification on login
+function handleAIThreatAlert(aiAnalysis) {
+    if (!aiAnalysis) return;
+    
+    const threat = aiAnalysis;
+    const reasons = threat.reasons || [];
+    
+    if (threat.threat_level === 'critical') {
+        showNotification(
+            `🚨 CRITICAL: ${reasons.join(', ')}. Score: ${threat.threat_score}/100`,
+            'error'
+        );
+    } else if (threat.threat_level === 'suspicious') {
+        showNotification(
+            `⚠️ Suspicious: ${reasons.join(', ')}. Score: ${threat.threat_score}/100`,
+            'warning'
+        );
+    } else if (threat.threat_score > 20) {
+        showNotification(
+            `✅ Login analyzed: ${reasons.join(', ')}`,
+            'info'
+        );
+    }
+}
+
+
+// Load AI stats when dashboard opens
+const dashboardBtn = document.getElementById('securityDashboardBtn');
+if (dashboardBtn) {
+    const originalClick = dashboardBtn.onclick;
+    dashboardBtn.addEventListener('click', () => {
+        if (typeof loadSecurityDashboard === 'function') {
+            loadSecurityDashboard();
+        }
+        loadAIThreatStats();
+    });
+}
+
+// ===========================
+// 2FA Modal + Verification
+// ===========================
+
+function show2FAModal() {
+    const modal = document.getElementById("twofa-modal");
+    modal.style.display = "flex";
+}
+
+async function verify2FA() {
+    const code = document.getElementById("twofa-input").value;
+
+    const res = await fetch("/api/verify-2fa", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ code })
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+        alert("Incorrect 2FA code");
+        return;
+    }
+
+    // Close modal and reload dashboard
+    document.getElementById("twofa-modal").style.display = "none";
+    window.location.reload();
+}
+
+// Enhance the existing handleAuth function to show AI alerts
+
+
+// ================================
+// AI Guardian Modal Open / Close
+// ================================
+document.getElementById("aiGuardianBtn")?.addEventListener("click", () => {
+    document.getElementById("aiGuardianModal").style.display = "block";
+    loadAIDashboard();      // Load AI dashboard data
+    loadLastThreat();       // Load last threat analysis
+});
+
+document.getElementById("closeAIGuardian")?.addEventListener("click", () => {
+    document.getElementById("aiGuardianModal").style.display = "none";
+});
+
+
+// ================================
+// LOAD AI DASHBOARD DATA
+// ================================
+async function loadAIDashboard() {
+    try {
+        const res = await fetch('/api/ai/dashboard?days=7');
+        const data = await res.json();
+
+        if (!data.success) return;
+
+        const stats = data.dashboard.statistics;
+        const devices = data.dashboard.devices;
+
+        // Update Stats Boxes
+        document.getElementById("aiTotalAnalyses").textContent = stats.total_analyses;
+        document.getElementById("aiSafeCount").textContent = stats.safe_count;
+        document.getElementById("aiSuspiciousCount").textContent = stats.suspicious_count;
+        document.getElementById("aiCriticalCount").textContent = stats.critical_count;
+
+        // Update Device Intelligence
+        document.getElementById("trustedDevicesCount").textContent = devices.trusted;
+        document.getElementById("newDevicesCount").textContent = devices.new;
+        document.getElementById("totalDevicesCount").textContent = devices.total;
+
+        // Update AI Engine Info
+        document.getElementById("modelType").textContent = data.dashboard.ai_model.type;
+        document.getElementById("modelProfiles").textContent = data.dashboard.ai_model.profiles + " profiles";
+        document.getElementById("modelStatus").style.color =
+            data.dashboard.ai_model.trained ? "#2ed573" : "#ff4757";
+
+        // Load Graphs
+        renderThreatTimelineChart(data.dashboard.graph_data);
+        renderThreatDistributionChart(stats);
+        
+        // Load History Table
+        renderAIHistoryTable(data.dashboard.recent_threats);
+
+    } catch (err) {
+        console.error("AI Dashboard Error:", err);
+    }
+}
+
+
+// ================================
+// LOAD LAST THREAT SCORE
+// ================================
+async function loadLastThreat() {
+    try {
+        const res = await fetch('/api/ai/last-threat');
+        const data = await res.json();
+        const card = document.getElementById("lastThreatBody");
+
+        if (!data.has_data) {
+            card.innerHTML = "<p>No threat analysis available.</p>";
+            return;
+        }
+
+        const t = data.threat;
+
+        card.innerHTML = `
+            <div class="last-threat-score level-${t.level}">
+                <h1>${t.score}</h1>
+                <p>${t.level_text}</p>
+                <p>Reason: ${t.reasons}</p>
+                <p>IP: ${t.ip_address}</p>
+                <p>Time: ${t.timestamp}</p>
+            </div>
+        `;
+    } catch (err) {
+        console.error("Last Threat Error:", err);
+    }
+}
+
+
+
+// Find your existing handleAuth in script.js and after successful login, add:
+// if (data.ai_threat_analysis) {
+//     handleAIThreatAlert(data.ai_threat_analysis);
+// }
+
