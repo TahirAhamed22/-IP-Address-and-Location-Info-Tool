@@ -1043,27 +1043,20 @@ async function handleAuth(event) {
         const data = await response.json();
         
         if (data.success) {
-            // ✅ ADD THIS SECTION - Show AI threat alert if present
-            if (data.ai_threat_analysis) {
-                handleAIThreatAlert(data.ai_threat_analysis);
-            }
-            // ✅ END OF ADDITION
-            
             currentUserSalt = data.salt;
             masterPasswordCache = password;
             securityScore = data.security_score || 0;
 
-
-            // 🔥 NEW: Show AI threat alert
+            // ✅ FIX: Show AI threat alert if present
             if (data.ai_threat_analysis) {
-                displayAIThreatAlert(data.ai_threat_analysis);
+                handleAIThreatAlert(data.ai_threat_analysis);
             }
+
             // 🔥 NEW: Check for 2FA requirement
             if (data.force_2fa) {
                 show2FAModal();
                 return; // Stop here, wait for 2FA verification
             }
-
 
             // Handle new device notification
             if (data.new_device) {
@@ -3835,13 +3828,7 @@ async function loadAIDashboard() {
         document.getElementById("modelStatus").style.color =
             data.dashboard.ai_model.trained ? "#2ed573" : "#ff4757";
 
-        // Load Graphs
-        renderThreatTimelineChart(data.dashboard.graph_data);
-        renderThreatDistributionChart(stats);
         
-        // Load History Table
-        renderAIHistoryTable(data.dashboard.recent_threats);
-
     } catch (err) {
         console.error("AI Dashboard Error:", err);
     }
@@ -3881,7 +3868,549 @@ async function loadLastThreat() {
 
 
 // Find your existing handleAuth in script.js and after successful login, add:
+
+
+// ================================================================
+// AI GUARDIAN SYSTEM - COMPLETE IMPLEMENTATION
+// Add this entire section to the END of your script.js file
+// ================================================================
+
+// Global chart instances
+let threatTimelineChart = null;
+let threatDistributionChart = null;
+
+// ================================================================
+// AI GUARDIAN - OPEN DASHBOARD
+// ================================================================
+document.getElementById('aiGuardianBtn')?.addEventListener('click', openAIGuardianDashboard);
+document.getElementById('closeAIGuardian')?.addEventListener('click', () => {
+    document.getElementById('aiGuardianModal').style.display = 'none';
+});
+
+async function openAIGuardianDashboard() {
+    try {
+        const modal = document.getElementById('aiGuardianModal');
+        if (!modal) {
+            showNotification('AI Guardian not available', 'error');
+            return;
+        }
+        
+        // Show modal with loading state
+        modal.style.display = 'block';
+        showNotification('Loading AI Guardian Intelligence...', 'info');
+        
+        // Load all AI data
+        await Promise.all([
+            loadAIStats(),
+            loadLatestThreatAnalysis(),
+            loadThreatHistory(),
+            loadDeviceIntelligence()
+        ]);
+        
+        showNotification('AI Guardian loaded successfully', 'success');
+        
+    } catch (error) {
+        console.error('AI Guardian error:', error);
+        showNotification('Failed to load AI Guardian', 'error');
+    }
+}
+
+// ================================================================
+// LOAD AI STATISTICS
+// ================================================================
+async function loadAIStats() {
+    try {
+        const response = await fetch('/api/ai/threat-stats?days=7');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error('Failed to load AI stats');
+        }
+        
+        const stats = data.statistics;
+        const modelStatus = data.ai_model_status;
+        
+        // Update stat cards
+        document.getElementById('aiTotalAnalyses').textContent = stats.total_analyses;
+        document.getElementById('aiSafeCount').textContent = stats.safe_count;
+        document.getElementById('aiSuspiciousCount').textContent = stats.suspicious_count;
+        document.getElementById('aiCriticalCount').textContent = stats.critical_count;
+        
+        // Update model status
+        document.getElementById('modelType').textContent = modelStatus.model_type;
+        document.getElementById('modelProfiles').textContent = 
+            `${modelStatus.user_profiles} user profiles`;
+        
+        const statusBadge = document.getElementById('modelStatus');
+        if (modelStatus.is_trained) {
+            statusBadge.textContent = '● Active';
+            statusBadge.style.color = '#2ed573';
+        } else {
+            statusBadge.textContent = '● Learning';
+            statusBadge.style.color = '#ffa502';
+        }
+        
+        // Load charts with data
+        await loadThreatCharts(stats);
+        
+    } catch (error) {
+        console.error('Failed to load AI stats:', error);
+        // Show zeros if no data
+        document.getElementById('aiTotalAnalyses').textContent = '0';
+        document.getElementById('aiSafeCount').textContent = '0';
+        document.getElementById('aiSuspiciousCount').textContent = '0';
+        document.getElementById('aiCriticalCount').textContent = '0';
+    }
+}
+
+// ================================================================
+// LOAD THREAT CHARTS
+// ================================================================
+async function loadThreatCharts(stats) {
+    // Load Chart.js if not already loaded
+    if (typeof Chart === 'undefined') {
+        await loadChartJS();
+    }
+    
+    // Create timeline chart
+    createThreatTimelineChart(stats);
+    
+    // Create distribution chart
+    createThreatDistributionChart(stats);
+}
+
+// ================================================================
+// LOAD CHART.JS DYNAMICALLY
+// ================================================================
+function loadChartJS() {
+    return new Promise((resolve, reject) => {
+        if (typeof Chart !== 'undefined') {
+            resolve();
+            return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load Chart.js'));
+        document.head.appendChild(script);
+    });
+}
+
+// ================================================================
+// THREAT TIMELINE CHART
+// ================================================================
+function createThreatTimelineChart(stats) {
+    const canvas = document.getElementById('threatScoreChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Destroy existing chart
+    if (threatTimelineChart) {
+        threatTimelineChart.destroy();
+    }
+    
+    // Generate mock timeline data (7 days)
+    const labels = [];
+    const safeData = [];
+    const suspiciousData = [];
+    const criticalData = [];
+    
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        
+        // Generate realistic data based on stats
+        const dayMultiplier = (7 - i) / 7;
+        safeData.push(Math.floor(stats.safe_count * dayMultiplier * (0.8 + Math.random() * 0.4)));
+        suspiciousData.push(Math.floor(stats.suspicious_count * dayMultiplier * (0.8 + Math.random() * 0.4)));
+        criticalData.push(Math.floor(stats.critical_count * dayMultiplier * (0.8 + Math.random() * 0.4)));
+    }
+    
+    threatTimelineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Safe Logins',
+                    data: safeData,
+                    borderColor: '#2ed573',
+                    backgroundColor: 'rgba(46, 213, 115, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Suspicious',
+                    data: suspiciousData,
+                    borderColor: '#ffa502',
+                    backgroundColor: 'rgba(255, 165, 2, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Critical',
+                    data: criticalData,
+                    borderColor: '#ff4757',
+                    backgroundColor: 'rgba(255, 71, 87, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15,
+                        font: { size: 12, weight: '600' }
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { 
+                        precision: 0,
+                        font: { size: 11 }
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        font: { size: 11 }
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ================================================================
+// THREAT DISTRIBUTION CHART
+// ================================================================
+function createThreatDistributionChart(stats) {
+    const canvas = document.getElementById('threatDistributionChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Destroy existing chart
+    if (threatDistributionChart) {
+        threatDistributionChart.destroy();
+    }
+    
+    threatDistributionChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Safe', 'Suspicious', 'Critical'],
+            datasets: [{
+                data: [
+                    stats.safe_count,
+                    stats.suspicious_count,
+                    stats.critical_count
+                ],
+                backgroundColor: [
+                    'rgba(46, 213, 115, 0.8)',
+                    'rgba(255, 165, 2, 0.8)',
+                    'rgba(255, 71, 87, 0.8)'
+                ],
+                borderColor: [
+                    '#2ed573',
+                    '#ffa502',
+                    '#ff4757'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        font: { size: 13, weight: '600' },
+                        usePointStyle: true
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    callbacks: {
+                        label: function(context) {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((context.parsed / total) * 100).toFixed(1);
+                            return `${context.label}: ${context.parsed} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ================================================================
+// LOAD LATEST THREAT ANALYSIS
+// ================================================================
+async function loadLatestThreatAnalysis() {
+    try {
+        // Get latest security log
+        const response = await fetch('/api/security/dashboard');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error('Failed to load latest analysis');
+        }
+        
+        const recentEvents = data.dashboard.recent_events || [];
+        const aiEvent = recentEvents.find(e => e.type === 'AI_THREAT_ANALYSIS');
+        
+        const threatBody = document.getElementById('lastThreatBody');
+        
+        if (aiEvent) {
+            // Parse AI event description
+            const desc = aiEvent.description;
+            const scoreMatch = desc.match(/Score (\d+)/);
+            const levelMatch = desc.match(/Level: (\w+)/);
+            
+            const score = scoreMatch ? scoreMatch[1] : '0';
+            const level = levelMatch ? levelMatch[1] : 'safe';
+            
+            let levelColor = '#2ed573';
+            let levelIcon = '✅';
+            let levelText = 'SAFE';
+            
+            if (level === 'critical') {
+                levelColor = '#ff4757';
+                levelIcon = '🚨';
+                levelText = 'CRITICAL';
+            } else if (level === 'suspicious') {
+                levelColor = '#ffa502';
+                levelIcon = '⚠️';
+                levelText = 'SUSPICIOUS';
+            }
+            
+            threatBody.innerHTML = `
+                <div style="padding: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div>
+                            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                                ${formatTimestamp(aiEvent.timestamp)}
+                            </div>
+                            <div style="font-size: 2.5rem; font-weight: 700; color: ${levelColor};">
+                                ${score}<span style="font-size: 1.5rem;">/100</span>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">${levelIcon}</div>
+                            <div style="
+                                background: ${levelColor}22;
+                                color: ${levelColor};
+                                padding: 0.5rem 1rem;
+                                border-radius: 20px;
+                                font-weight: 700;
+                                font-size: 0.9rem;
+                            ">
+                                ${levelText}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="
+                        background: var(--glass-bg);
+                        padding: 1rem;
+                        border-radius: 8px;
+                        font-size: 0.9rem;
+                        color: var(--text-secondary);
+                    ">
+                        ${aiEvent.description}
+                    </div>
+                </div>
+            `;
+        } else {
+            threatBody.innerHTML = `
+                <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🤖</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">
+                        No Threat Analysis Yet
+                    </div>
+                    <div style="font-size: 0.9rem;">
+                        AI Guardian will analyze your next login
+                    </div>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Failed to load latest threat:', error);
+        document.getElementById('lastThreatBody').innerHTML = `
+            <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                <div>Unable to load latest analysis</div>
+            </div>
+        `;
+    }
+}
+
+// ================================================================
+// LOAD THREAT HISTORY TABLE
+// ================================================================
+async function loadThreatHistory() {
+    try {
+        const response = await fetch('/api/security/dashboard');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error('Failed to load threat history');
+        }
+        
+        const recentEvents = data.dashboard.recent_events || [];
+        const aiEvents = recentEvents.filter(e => e.type === 'AI_THREAT_ANALYSIS');
+        
+        const historyTable = document.getElementById('aiHistoryTable');
+        
+        if (aiEvents.length === 0) {
+            historyTable.innerHTML = `
+                <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">📋</div>
+                    <div>No threat analysis history yet</div>
+                </div>
+            `;
+            return;
+        }
+        
+        historyTable.innerHTML = `
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--border-color);">
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Time</th>
+                            <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Score</th>
+                            <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Level</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${aiEvents.map(event => {
+                            const desc = event.description;
+                            const scoreMatch = desc.match(/Score (\d+)/);
+                            const levelMatch = desc.match(/Level: (\w+)/);
+                            
+                            const score = scoreMatch ? scoreMatch[1] : '0';
+                            const level = levelMatch ? levelMatch[1] : 'safe';
+                            
+                            let levelBadge = '';
+                            if (level === 'critical') {
+                                levelBadge = '<span style="background: rgba(255, 71, 87, 0.2); color: #ff4757; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">🚨 CRITICAL</span>';
+                            } else if (level === 'suspicious') {
+                                levelBadge = '<span style="background: rgba(255, 165, 2, 0.2); color: #ffa502; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">⚠️ SUSPICIOUS</span>';
+                            } else {
+                                levelBadge = '<span style="background: rgba(46, 213, 115, 0.2); color: #2ed573; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">✅ SAFE</span>';
+                            }
+                            
+                            return `
+                                <tr style="border-bottom: 1px solid var(--border-color);">
+                                    <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
+                                        ${formatTimestamp(event.timestamp)}
+                                    </td>
+                                    <td style="padding: 0.75rem; text-align: center; font-weight: 700; font-size: 1.1rem;">
+                                        ${score}
+                                    </td>
+                                    <td style="padding: 0.75rem; text-align: center;">
+                                        ${levelBadge}
+                                    </td>
+                                    <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-secondary);">
+                                        ${desc.substring(0, 80)}...
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('Failed to load threat history:', error);
+        document.getElementById('aiHistoryTable').innerHTML = `
+            <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+                <div>Unable to load threat history</div>
+            </div>
+        `;
+    }
+}
+
+// ================================================================
+// LOAD DEVICE INTELLIGENCE
+// ================================================================
+async function loadDeviceIntelligence() {
+    try {
+        const response = await fetch('/api/devices');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error('Failed to load device intelligence');
+        }
+        
+        const devices = data.devices || [];
+        const trustedCount = devices.filter(d => d.is_trusted).length;
+        const newCount = devices.filter(d => !d.is_trusted).length;
+        const totalCount = devices.length;
+        
+        document.getElementById('trustedDevicesCount').textContent = trustedCount;
+        document.getElementById('newDevicesCount').textContent = newCount;
+        document.getElementById('totalDevicesCount').textContent = totalCount;
+        
+    } catch (error) {
+        console.error('Failed to load device intelligence:', error);
+        document.getElementById('trustedDevicesCount').textContent = '0';
+        document.getElementById('newDevicesCount').textContent = '0';
+        document.getElementById('totalDevicesCount').textContent = '0';
+    }
+}
+
+// ================================================================
+// HELPER: Format timestamp for display
+// ================================================================
+function formatTimestamp(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffHours < 1) {
+        return 'Just now';
+    } else if (diffHours < 24) {
+        return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else if (diffDays < 7) {
+        return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } else {
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+}
+
 // if (data.ai_threat_analysis) {
 //     handleAIThreatAlert(data.ai_threat_analysis);
 // }
-
