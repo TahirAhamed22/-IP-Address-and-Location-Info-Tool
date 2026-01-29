@@ -92,7 +92,7 @@ login_manager.session_protection = "strong"
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        user = User.query.get(int(user_id))
+        user = db.session.get(User, int(user_id))
         if user and user.is_account_locked():
             return None
         return user
@@ -146,9 +146,9 @@ class User(db.Model, UserMixin):
     recovery_phone = db.Column(db.String(20), nullable=True)  # NEW
     
     # Security & Preferences
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime)
-    last_password_change = db.Column(db.DateTime, default=datetime.utcnow)  # NEW
+    last_password_change = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     failed_login_attempts = db.Column(db.Integer, default=0)
     account_locked_until = db.Column(db.DateTime)
     
@@ -180,12 +180,19 @@ class User(db.Model, UserMixin):
         return bcrypt.check_password_hash(self.password_hash, password)
     
     def is_account_locked(self):
-        if self.account_locked_until and self.account_locked_until > datetime.utcnow():
-            return True
+        if self.account_locked_until:
+            # Handle timezone-naive datetime from old database records
+            locked_until = self.account_locked_until
+            if locked_until.tzinfo is None:
+                locked_until = locked_until.replace(tzinfo=timezone.utc)
+                
+            if locked_until > datetime.now(timezone.utc):
+                return True
+                
         return False
     
     def lock_account(self, duration_minutes=60):
-        self.account_locked_until = datetime.utcnow() + timedelta(minutes=duration_minutes)
+        self.account_locked_until = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
         self.failed_login_attempts += 1
         
         # Log security event
@@ -277,8 +284,8 @@ class VaultEntry(db.Model):
     notes = db.Column(db.Text, nullable=True)  # NEW
     
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_accessed = db.Column(db.DateTime)  # NEW
     
     # Security
@@ -291,7 +298,7 @@ class VaultEntry(db.Model):
     def record_access(self):
         """Record password access"""
         self.access_count += 1
-        self.last_accessed = datetime.utcnow()
+        self.last_accessed = datetime.now(timezone.utc)
         
         # Log access
         SecurityLog.create_log(self.user_id, 'PASSWORD_ACCESSED', 
@@ -300,58 +307,119 @@ class VaultEntry(db.Model):
 # ===== REPLACE SecurityLog MODEL in app.py (around line 270) =====
 
 class SecurityLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # ✅ CHANGED: nullable=True
-    event_type = db.Column(db.String(50), nullable=False)  # LOGIN, BREACH, ACCESS, etc.
-    description = db.Column(db.Text, nullable=False)
-    ip_address = db.Column(db.String(45), nullable=True)
-    user_agent = db.Column(db.Text, nullable=True)
-    severity = db.Column(db.String(20), default='INFO')  # INFO, WARNING, CRITICAL
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    """Security event logging with INDEPENDENT transaction support"""
     
+    __tablename__ = 'security_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    event_type = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    severity = db.Column(db.String(20), default='INFO')
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+
     @staticmethod
-    def create_log(user_id, event_type, description, severity='INFO'):
-        """Create a security log entry with proper context handling"""
+    def create_log(user_id, event_type, description, severity='INFO', 
+                   ip_address=None, user_agent=None):
+        """
+        ✅ PERMANENT FIX: Create security log with INDEPENDENT DATABASE CONNECTION
+        
+        This method creates its OWN database session that is completely separate
+        from Flask's request-scoped session. This prevents ALL transaction conflicts.
+        """
+        import logging
+        from flask import has_request_context, request, current_app
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import scoped_session, sessionmaker
+        
+        logger = logging.getLogger(__name__)
+        
+        # Collect request context data if available
         try:
-            from flask import request as flask_request, has_request_context
-            
-            # Default values
-            ip_address = None
-            user_agent = None
-            
-            # Get request data only if we're in a request context
             if has_request_context():
-                try:
-                    ip_address = flask_request.remote_addr
-                    user_agent = flask_request.headers.get('User-Agent')
-                except:
-                    pass
+                if not ip_address:
+                    ip_address = request.remote_addr
+                if not user_agent:
+                    user_agent = request.headers.get('User-Agent', '')
+        except Exception as e:
+            logger.debug(f"Could not get request context: {e}")
+            ip_address = ip_address or 'Unknown'
+            user_agent = user_agent or 'Unknown'
+        
+        # Debug logging
+        logger.debug(f"📝 About to log - user_id={user_id}, desc={description[:50]}...")
+        
+        # ✅ CRITICAL: Create INDEPENDENT database session
+        independent_session = None
+        
+        try:
+            # Get the database URI from Flask config
+            db_uri = current_app.config['SQLALCHEMY_DATABASE_URI']
+            logger.debug(f"Using DB: {db_uri}")
             
-            # ✅ ALLOW None user_id for system events
-            # Create log entry
-            log = SecurityLog(
-                user_id=user_id,  # Can be None now!
+            # Create a NEW engine (separate connection pool)
+            engine = create_engine(
+                db_uri,
+                pool_pre_ping=True,  # Verify connections before using
+                pool_recycle=3600,   # Recycle connections after 1 hour
+                connect_args={'check_same_thread': False} if 'sqlite' in db_uri else {}
+            )
+            
+            # Create a NEW session factory
+            SessionFactory = sessionmaker(bind=engine)
+            
+            # Use scoped_session for thread safety
+            independent_session = scoped_session(SessionFactory)
+            
+            # Create the log entry object
+            log_entry = SecurityLog(
+                user_id=user_id,
                 event_type=event_type,
                 description=description,
                 severity=severity,
                 ip_address=ip_address,
-                user_agent=user_agent
+                user_agent=user_agent,
+                timestamp=datetime.now(timezone.utc)
             )
             
-            db.session.add(log)
-            db.session.commit()
+            # Add to the INDEPENDENT session
+            independent_session.add(log_entry)
             
+            # Commit in its OWN transaction
+            independent_session.commit()
+            
+            logger.debug(f"✅ create_log returned: True")
             return True
             
         except Exception as e:
-            try:
-                db.session.rollback()
-            except:
-                pass
+            logger.error(f"❌ Failed to create security log: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             
-            logger.debug(f"Security log creation failed (non-critical): {e}")
+            # Rollback the independent session on error
+            if independent_session:
+                try:
+                    independent_session.rollback()
+                except:
+                    pass
+            
+            logger.debug(f"DEBUG: create_log returned: False")
             return False
-
+            
+        finally:
+            # ✅ CRITICAL: Always close the independent session
+            if independent_session:
+                try:
+                    independent_session.remove()  # This closes all connections
+                    engine.dispose()  # Clean up the engine
+                except Exception as e:
+                    logger.debug(f"Error closing session: {e}")
+    
+    def __repr__(self):
+        return f'<SecurityLog {self.event_type} - {self.severity}>'
 
         
 # Next class starts here (PasswordReset or DeviceFingerprint)
@@ -363,7 +431,7 @@ class PasswordReset(db.Model):
     contact_info = db.Column(db.String(120), nullable=False)  # email or phone
     expires_at = db.Column(db.DateTime, nullable=False)
     used = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     @staticmethod
     def create_reset_token(user, method, contact_info):
@@ -380,7 +448,7 @@ class PasswordReset(db.Model):
             reset_token=reset_token,
             reset_method=method,
             contact_info=contact_info,
-            expires_at=datetime.utcnow() + timedelta(minutes=30)
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30)
         )
         db.session.add(reset_request)
         db.session.commit()
@@ -389,7 +457,7 @@ class PasswordReset(db.Model):
     
     def is_valid(self):
         """Check if reset token is valid"""
-        return not self.used and datetime.utcnow() < self.expires_at
+        return not self.used and datetime.now(timezone.utc) < self.expires_at
 
 class DeviceFingerprint(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -397,8 +465,8 @@ class DeviceFingerprint(db.Model):
     device_hash = db.Column(db.String(64), nullable=False)  # SHA256 of device fingerprint
     device_name = db.Column(db.String(200), nullable=True)
     is_trusted = db.Column(db.Boolean, default=False)
-    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
-    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    first_seen = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     ip_address = db.Column(db.String(45), nullable=True)
     user_agent = db.Column(db.Text, nullable=True)
     
@@ -487,7 +555,7 @@ class NotificationService:
                 <div style="padding: 20px; background: #f8f9fa; color: #333;">
                     <h2>Security Event: {event_type}</h2>
                     <p>{message}</p>
-                    <p><strong>Time:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+                    <p><strong>Time:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
                     <p><strong>User:</strong> {user.username}</p>
                     
                     <div style="margin: 20px 0; padding: 15px; background: #e3f2fd; border-radius: 5px;">
@@ -511,7 +579,7 @@ class NotificationService:
         # Send SMS notification
         if send_sms:
             phone_number = user.phone or user.recovery_phone
-            sms_message = f"VaultGuard Alert: {event_type} - {message[:100]}... Time: {datetime.utcnow().strftime('%H:%M UTC')}"
+            sms_message = f"VaultGuard Alert: {event_type} - {message[:100]}... Time: {datetime.now(timezone.utc).strftime('%H:%M UTC')}"
             
             if NotificationService.send_sms(phone_number, sms_message):
                 notifications_sent.append('sms')
@@ -665,7 +733,7 @@ def encrypt_password(password, key):
         f = Fernet(key)
         data = json.dumps({
             'password': password,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'checksum': secrets.token_hex(16)
         })
         encrypted = f.encrypt(data.encode())
@@ -768,7 +836,7 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:;"
     
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -824,6 +892,12 @@ def logout():
 # --------------------------------------------------------
 @app.route('/api/login', methods=["POST"])
 def api_login():
+    """
+    COMPLETELY FIXED LOGIN ROUTE
+    ✅ Proper transaction handling
+    ✅ AI analysis after database commits
+    ✅ No transaction conflicts
+    """
     try:
         data = request.get_json()
         username = sanitize_input(data.get("username", ""))
@@ -835,7 +909,9 @@ def api_login():
                 'message': 'Username and password required'
             }), 400
 
-        # USER LOOKUP
+        # ========================================
+        # STEP 1: USER LOOKUP
+        # ========================================
         user = User.query.filter_by(username=username).first()
         if not user:
             SecurityLog.create_log(
@@ -844,7 +920,9 @@ def api_login():
             )
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
-        # ACCOUNT LOCK CHECK
+        # ========================================
+        # STEP 2: ACCOUNT LOCK CHECK
+        # ========================================
         if user.is_account_locked():
             SecurityLog.create_log(
                 user.id, 'LOGIN_BLOCKED',
@@ -855,16 +933,18 @@ def api_login():
                 'message': 'Account locked. Try again later.'
             }), 423
 
-        # PASSWORD CHECK - FAILED
+        # ========================================
+        # STEP 3: PASSWORD CHECK
+        # ========================================
         if not user.check_password(password):
+            # FAILED LOGIN - increment counter and commit
             user.failed_login_attempts += 1
-            db.session.commit()
-
+            
             # Auto-lock after 3 failed attempts
             if user.failed_login_attempts >= 3:
                 user.lock_account(60)
-                db.session.commit()
-
+                db.session.commit()  # Commit the lock
+                
                 if user.security_alerts:
                     NotificationService.notify_user(
                         user,
@@ -872,6 +952,8 @@ def api_login():
                         f'Your account was locked after {user.failed_login_attempts} failed attempts.',
                         is_critical=True
                     )
+            else:
+                db.session.commit()  # Commit failed attempt count
 
             SecurityLog.create_log(
                 user.id, 'LOGIN_FAILED',
@@ -880,24 +962,60 @@ def api_login():
 
             return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
-        # ✅ PASSWORD CORRECT - BUT DON'T RESET COUNTERS YET!
-
-        # 🔥 DEBUG: Print current failed attempts
-        logger.info("=" * 70)
-        logger.info("🔍 PRE-AI ANALYSIS DEBUG")
-        logger.info(f"User: {user.username}")
-        logger.info(f"Failed attempts in DB: {user.failed_login_attempts}")
-        logger.info(f"About to call AI Guardian...")
-        logger.info("=" * 70)
+        # ========================================
+        # STEP 4: PASSWORD CORRECT - PREPARE DATA FOR AI
+        # ========================================
+        # ✅ CRITICAL: Capture failed_login_attempts BEFORE resetting
+        ai_login_data = {
+            'user_id': user.id,
+            'username': user.username,
+            'failed_attempts': user.failed_login_attempts,  # Captured BEFORE reset
+            'ip_address': request.remote_addr or '0.0.0.0',
+            'user_agent': request.headers.get('User-Agent', ''),
+            'timestamp': datetime.now(timezone.utc),
+            'is_success': True
+        }
         
-        # 🤖 AI GUARDIAN ANALYSIS - BEFORE RESETTING COUNTERS!
+        logger.info(f"🔍 Captured for AI: Failed attempts = {ai_login_data['failed_attempts']}")
+
+        # ========================================
+        # STEP 5: UPDATE USER AND COMMIT
+        # ========================================
+        # Reset counters and update login time
+        user.unlock_account()
+        user.failed_login_attempts = 0
+        user.last_login = datetime.now(timezone.utc)
+        
+        # Commit all user changes FIRST
+        db.session.commit()
+        logger.info("✅ User data committed to database")
+
+        # ========================================
+        # STEP 6: DEVICE MANAGEMENT (separate transaction)
+        # ========================================
+        device = register_or_update_device(user, request)
+        if device:
+            device.is_trusted = True
+            db.session.commit()
+
+        # ========================================
+        # STEP 7: AI ANALYSIS (AFTER all commits)
+        # ========================================
         threat_analysis = None
         ai_message = None
         
         if ai_guardian:
             try:
-                # AI sees the ACTUAL failed_login_attempts count
-                analysis_result = ai_guardian.analyze_login_attempt(user, request, is_success=True)
+                logger.info("🤖 Starting AI analysis AFTER database commits...")
+                
+                # Pass the captured data (with original failed_login_attempts)
+                analysis_result = ai_guardian.analyze_login_attempt(
+                    user, 
+                    request, 
+                    is_success=True,
+                    captured_data=ai_login_data  # Pass pre-captured data
+                )
+                
                 threat_analysis = analysis_result.get('threat_analysis', {})
                 
                 # Generate user-friendly message
@@ -913,21 +1031,12 @@ def api_login():
                     ai_message = f"✅ Safe: Login pattern normal (score {threat_score}/100)"
                     
             except Exception as ai_error:
-                logger.warning(f"AI analysis skipped: {ai_error}")
+                logger.warning(f"AI analysis failed (non-critical): {ai_error}")
                 ai_message = "AI analysis unavailable"
-        
-        # NOW reset counters AFTER AI analysis
-        user.unlock_account()
-        user.failed_login_attempts = 0
-        db.session.commit()
 
-        # DEVICE MANAGEMENT
-        device = register_or_update_device(user, request)
-        if device:
-            device.is_trusted = True
-            db.session.commit()
-
-        # CREATE SESSION
+        # ========================================
+        # STEP 8: CREATE SESSION
+        # ========================================
         login_user(user, remember=False)
         session['logged_in'] = True
         session['username'] = user.username
@@ -935,7 +1044,9 @@ def api_login():
         session['device_hash'] = device.device_hash if device else None
         session.permanent = True
 
-        # NEW DEVICE ALERT
+        # ========================================
+        # STEP 9: NEW DEVICE ALERT
+        # ========================================
         if device and not device.is_trusted and user.login_notifications:
             NotificationService.notify_user(
                 user,
@@ -944,13 +1055,17 @@ def api_login():
                 is_critical=True
             )
 
-        # Log success
+        # ========================================
+        # STEP 10: LOG SUCCESS (separate transaction)
+        # ========================================
         SecurityLog.create_log(
             user.id, 'LOGIN_SUCCESS',
             'User logged in successfully', 'INFO'
         )
 
-        # BUILD RESPONSE
+        # ========================================
+        # STEP 11: BUILD RESPONSE
+        # ========================================
         response_data = {
             'success': True,
             'message': 'Secure login successful!',
@@ -960,7 +1075,7 @@ def api_login():
             'device_trusted': device.is_trusted if device else False
         }
 
-        # 🤖 ADD AI THREAT INFO
+        # Add AI threat info if available
         if threat_analysis:
             response_data['ai_threat_analysis'] = {
                 'threat_score': threat_analysis.get('threat_score', 0),
@@ -973,6 +1088,8 @@ def api_login():
 
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         db.session.rollback()
         return jsonify({
             'success': False,
@@ -1275,7 +1392,7 @@ def manage_vault():
                 existing_entry.notes = notes
                 existing_entry.password_strength_score = strength_score
                 existing_entry.is_compromised = is_breached
-                existing_entry.updated_at = datetime.utcnow()
+                existing_entry.updated_at = datetime.now(timezone.utc)
                 message = 'Password updated securely!'
                 SecurityLog.create_log(current_user.id, 'PASSWORD_UPDATED', f'Updated password for {site}')
             else:
@@ -1471,12 +1588,12 @@ def security_dashboard_api():
 @app.route('/api/ai/dashboard', methods=['GET'])
 @login_required
 def get_ai_dashboard():
-    """Get complete AI Guardian dashboard data"""
+    """Get complete AI Guardian dashboard data - FIXED"""
     try:
         days = request.args.get('days', 7, type=int)
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
-        # Get AI threat logs for current user only
+        # Get AI threat logs for current user ONLY
         threat_logs = SecurityLog.query.filter(
             SecurityLog.user_id == current_user.id,
             SecurityLog.event_type == 'AI_THREAT_ANALYSIS',
@@ -1498,10 +1615,10 @@ def get_ai_dashboard():
                 score = int(score_match.group(1))
                 threat_scores.append(score)
                 
-                # Categorize based on NEW scoring system
+                # ✅ FIXED: Use CORRECT thresholds
                 if score >= 80:
                     critical_count += 1
-                elif score >= 30:
+                elif score >= 31:
                     suspicious_count += 1
                 else:
                     safe_count += 1
@@ -1522,10 +1639,10 @@ def get_ai_dashboard():
             score_match = re.search(r'Score (\d+)', log.description)
             score = int(score_match.group(1)) if score_match else 0
             
-            # Determine level based on NEW scoring
+            # ✅ FIXED: Use CORRECT level assignment
             if score >= 80:
                 level = 'critical'
-            elif score >= 30:
+            elif score >= 31:
                 level = 'suspicious'
             else:
                 level = 'safe'
@@ -1590,6 +1707,7 @@ def get_ai_dashboard():
             'success': False,
             'message': 'Failed to load AI dashboard'
         }), 500
+
 
 
 @app.route('/api/ai/last-threat', methods=['GET'])
@@ -1821,7 +1939,7 @@ def get_ai_threat_stats():
     """Get AI threat detection statistics - FIXED to exclude deleted users"""
     try:
         days = request.args.get('days', 7, type=int)
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get all AI threat analysis logs
         threat_logs = SecurityLog.query.filter(
@@ -2104,7 +2222,7 @@ def vault_security_audit():
                     }]
                 
                 # Check password age (if older than 90 days)
-                days_old = (datetime.utcnow() - entry.updated_at).days
+                days_old = (datetime.now(timezone.utc) - entry.updated_at).days
                 if days_old > 90:
                     audit_results['old_count'] += 1
                     audit_results['old_sites'].append({
@@ -2197,7 +2315,7 @@ def export_vault():
             'data': export_data,
             'format': export_format,
             'exported_count': len(export_data),
-            'export_timestamp': datetime.utcnow().isoformat()
+            'export_timestamp': datetime.now(timezone.utc).isoformat()
         }), 200
         
     except Exception as e:
@@ -2294,7 +2412,7 @@ def admin_stats():
             'total_security_logs': SecurityLog.query.count(),
             'compromised_passwords': VaultEntry.query.filter_by(is_compromised=True).count(),
             'recent_registrations': User.query.filter(
-                User.created_at >= datetime.utcnow() - timedelta(days=7)
+                User.created_at >= datetime.now(timezone.utc) - timedelta(days=7)
             ).count(),
             'database_size': 'N/A'  # Implement based on your database
         }
@@ -2342,9 +2460,9 @@ def create_ssl_certificate():
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.utcnow()
+            datetime.now(timezone.utc)
         ).not_valid_after(
-            datetime.utcnow() + timedelta(days=365)
+            datetime.now(timezone.utc) + timedelta(days=365)
         ).add_extension(
             x509.SubjectAlternativeName([
                 x509.DNSName("localhost"),
@@ -2494,11 +2612,17 @@ if __name__ == '__main__':
         create_default_admin()
         logger.info("Database initialized successfully")
         
-        # ✅ CRITICAL FIX: Initialize AND train AI Guardian
+        # ✅ CRITICAL FIX: Initialize AI Guardian
         try:
             from services.ai_guardian import create_ai_guardian
             ai_guardian = create_ai_guardian(db.session, NotificationService)
+            logger.info("✅ AI Guardian fully initialized and ready")
             
+        except Exception as e:
+            logger.error(f"❌ AI Guardian initialization failed: {e}")
+            logger.warning("⚠️ Application will run without AI threat detection")
+            ai_guardian = None
+
             # 🤖 Train AI from existing security logs
             training_data = []
             try:
@@ -2508,7 +2632,7 @@ if __name__ == '__main__':
                 ).order_by(SecurityLog.timestamp.desc()).limit(100).all()
                 
                 for log in login_logs:
-                    user = User.query.get(log.user_id)
+                    user = db.session.get(User, log.user_id) if log.user_id else None
                     if user:
                         training_data.append({
                             'user_id': user.id,
