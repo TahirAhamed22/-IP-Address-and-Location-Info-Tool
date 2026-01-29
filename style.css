@@ -2562,6 +2562,65 @@ input:checked + .toggle-slider:before {
     font-weight: bold;
 }
 
+/* ===== 2FA MODAL STYLES ===== */
+#twofa-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    backdrop-filter: blur(10px);
+}
+
+#twofa-modal .modal-content {
+    background: var(--card-bg);
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+}
+
+#twofa-modal h2 {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    font-weight: 700;
+}
+
+#twofa-input {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 1.2rem;
+    text-align: center;
+    letter-spacing: 0.5rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    margin: 1rem 0;
+    background: var(--glass-bg);
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+}
+
+#twofa-modal button {
+    width: 100%;
+    padding: 1rem;
+    background: var(--gradient-accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#twofa-modal button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+}
+
 /* ===== PASSWORD MODAL ===== */
 .password-modal {
     position: fixed;
@@ -2750,6 +2809,49 @@ input:checked + .toggle-slider:before {
     text-align: center;
     margin: 1rem 0;
     font-weight: 600;
+}
+
+/* ===== AI THREAT ALERT BANNER ===== */
+.ai-alert {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem;
+    text-align: center;
+    font-weight: 600;
+    z-index: 9999;
+    animation: slideDown 0.5s ease-out;
+    transition: opacity 0.8s ease;
+}
+
+.ai-alert.critical {
+    background: linear-gradient(135deg, #ff4757, #ff3742);
+    color: white;
+    border-bottom: 3px solid #ff1744;
+}
+
+.ai-alert.warning {
+    background: linear-gradient(135deg, #ffa502, #ff6348);
+    color: white;
+    border-bottom: 3px solid #ff8c00;
+}
+
+.ai-alert.safe {
+    background: linear-gradient(135deg, #2ed573, #17d97a);
+    color: white;
+    border-bottom: 3px solid #00c853;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 /* ===== NOTIFICATION SYSTEM ===== */
@@ -4925,6 +5027,381 @@ textarea.form-input {
 
 .twofa-box button:hover {
     background: #005fcc;
+}
+
+
+
+
+
+
+/* ================================================================
+   AI GUARDIAN - 3-COLUMN LAYOUT WITH SIDEBARS
+   Add this to your style.css file
+   ================================================================ */
+
+.ai-dashboard-container {
+    display: grid;
+    grid-template-columns: 250px 1fr 250px;
+    gap: 1.5rem;
+    max-width: 1800px;
+    margin: 2rem auto;
+    padding: 2rem;
+}
+
+/* LEFT & RIGHT SIDEBARS */
+.ai-sidebar-left,
+.ai-sidebar-right {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    height: fit-content;
+    position: sticky;
+    top: 20px;
+    box-shadow: var(--shadow-soft);
+}
+
+.sidebar-section h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* MINI STAT CARDS (Left Sidebar) */
+.mini-stat-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 0.3s ease;
+}
+
+.mini-stat-card:hover {
+    transform: translateX(5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.mini-stat-card.safe {
+    border-left: 4px solid #2ed573;
+}
+
+.mini-stat-card.suspicious {
+    border-left: 4px solid #ffa502;
+}
+
+.mini-stat-card.critical {
+    border-left: 4px solid #ff4757;
+}
+
+.mini-stat-icon {
+    font-size: 1.8rem;
+}
+
+.mini-stat-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.mini-stat-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+/* LIVE FEED (Left Sidebar) */
+.live-feed-container {
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+.feed-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--glass-bg);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    border-left: 3px solid transparent;
+    animation: slideInLeft 0.4s ease-out;
+}
+
+.feed-item.safe {
+    border-left-color: #2ed573;
+}
+
+.feed-item.suspicious {
+    border-left-color: #ffa502;
+}
+
+.feed-item.critical {
+    border-left-color: #ff4757;
+}
+
+.feed-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2ed573;
+    animation: pulse 2s infinite;
+}
+
+.feed-text {
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* QUICK ACTION BUTTONS (Right Sidebar) */
+.quick-action-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    background: var(--glass-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.quick-action-btn:hover {
+    background: var(--accent-blue);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(91, 124, 255, 0.3);
+}
+
+.quick-action-btn.primary {
+    background: var(--gradient-primary);
+    color: white;
+    border: none;
+}
+
+.quick-action-btn.primary:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6b3f8f 100%);
+    box-shadow: 0 6px 20px rgba(91, 124, 255, 0.4);
+}
+
+.action-icon {
+    font-size: 1.3rem;
+}
+
+.action-text {
+    flex: 1;
+}
+
+/* SECURITY TIPS (Right Sidebar) */
+.security-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: rgba(91, 124, 255, 0.05);
+    border: 1px solid rgba(91, 124, 255, 0.2);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.tip-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+
+.tip-text {
+    line-height: 1.4;
+}
+
+/* MAIN CONTENT AREA */
+.ai-dashboard-main {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: var(--shadow-soft);
+}
+
+/* ANIMATIONS */
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(1.1);
+    }
+}
+
+/* RESPONSIVE DESIGN */
+@media (max-width: 1400px) {
+    .ai-dashboard-container {
+        grid-template-columns: 220px 1fr 220px;
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 1200px) {
+    .ai-dashboard-container {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .ai-sidebar-left,
+    .ai-sidebar-right {
+        position: static;
+        height: auto;
+    }
+    
+    /* Stack order: Main → Left Sidebar → Right Sidebar */
+    .ai-dashboard-main {
+        order: 1;
+    }
+    
+    .ai-sidebar-left {
+        order: 2;
+    }
+    
+    .ai-sidebar-right {
+        order: 3;
+    }
+}
+
+@media (max-width: 768px) {
+    .ai-dashboard-container {
+        padding: 1rem;
+    }
+    
+    .ai-dashboard-main,
+    .ai-sidebar-left,
+    .ai-sidebar-right {
+        padding: 1rem;
+    }
+    
+    .mini-stat-card {
+        padding: 0.75rem;
+    }
+    
+    .quick-action-btn {
+        padding: 0.75rem;
+        font-size: 0.85rem;
+    }
+}
+
+
+/* ===== AI GUARDIAN MODAL STYLES ===== */
+#aiGuardianModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 9999;
+    overflow-y: auto;
+    backdrop-filter: blur(10px);
+}
+
+#aiGuardianModal .modal-content {
+    background: var(--card-bg);
+    margin: 2rem auto;
+    padding: 2rem;
+    border-radius: 16px;
+    max-width: 1200px;
+    width: 95%;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-elevated);
+}
+
+.ai-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.ai-stat-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.ai-stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-primary);
+}
+
+.ai-stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.ai-stat-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.ai-threat-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.ai-device-intel,
+.ai-model-status,
+.ai-history {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.ai-device-intel h3,
+.ai-model-status h3,
+.ai-history h3 {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    font-weight: 700;
+}
+
+.ai-device-intel p,
+.ai-model-status p {
+    color: var(--text-secondary);
+    margin: 0.5rem 0;
 }
 
 
